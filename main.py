@@ -306,7 +306,7 @@ def generate_token(netflix_id):
     }
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
+        response = requests.get(url, params=params, headers=headers, timeout=20, verify=False)
         data = response.json()
         
         if "value" in data and data["value"] and "account" in data["value"]:
@@ -338,7 +338,6 @@ def extract_zip_and_get_files(zip_path, extract_dir):
         logger.error(f"Error extracting ZIP file: {e}")
         return []
 
-# واجهة الأزرار عند البدء
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -454,7 +453,7 @@ def handle_documents(message):
     
     temp_dirs = []
     try:
-        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة...")
+        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة واستخراج الروابط...")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -531,7 +530,7 @@ def handle_documents(message):
             with open(result_file_path, "rb") as rf:
                 bot.send_document(message.chat.id, rf, caption="📁 ملف النتائج الشامل: `the_premuim_account.txt`", parse_mode='Markdown')
                 
-        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال وفعال حقاً.")
+        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال مع روابط الدخول وأزرار التصفح.")
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
     finally:
@@ -547,7 +546,7 @@ def handle_text_message(message):
     if not content or content.startswith('/'):
         return
         
-    bot.reply_to(message, "⏳ جاري فحص الكوكي والتحقق من حالته...")
+    bot.reply_to(message, "⏳ جاري فحص الكوكي واستخراج رابط الدخول...")
     netflix_id = extract_netflix_id(content)
     
     if not netflix_id:
@@ -583,5 +582,5 @@ def handle_text_message(message):
         bot.reply_to(message, "❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).", parse_mode='Markdown')
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris...")
+    logger.info("Telegram Bot is running for Faris with active token links...")
     bot.infinity_polling()
