@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Owner credit & Channel info
 OWNER_CREDIT = "Faris - https://t.me/farxxess"
-CHANNEL_LINK = "https://t.me/faresschannel"
+CHANNEL_LINK = "https://t.me/farxxess"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
@@ -330,14 +330,13 @@ def callback_query(call):
             token_match = re.search(r'nftoken=([^\s]+)', account)
             if token_match:
                 t_val = token_match.group(1)
-                pc_url = f"https://www.netflix.com/account?nftoken={t_val}"
-                phone_url = f"https://netflix.com/unsupported?nftoken={t_val}"
+                pc_url = f"https://www.netflix.com/login?nftoken={t_val}"
+                phone_url = f"https://www.netflix.com/browse?nftoken={t_val}"
                 markup.add(
                     InlineKeyboardButton("💻 PC Login", url=pc_url),
                     InlineKeyboardButton("📱 Phone Login", url=phone_url)
                 )
             
-            # إضافة توقيع العلامة المائية لفارس وقناته
             watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
             bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown', reply_markup=markup if token_match else None)
         else:
@@ -362,7 +361,7 @@ def callback_query(call):
             "▫️ لإضافة نقاط لمستخدم، أرسل الأمر بالشكل التالي:\n"
             "`/addpoints [ID] [العدد]`"
         )
-        bot.send_message(message.chat.id if hasattr(call, 'message') else call.message.chat.id, admin_text, parse_mode='Markdown')
+        bot.send_message(call.message.chat.id, admin_text, parse_mode='Markdown')
         
     elif call.data.startswith("stop_scan_"):
         scan_id = call.data.replace("stop_scan_", "")
@@ -407,7 +406,6 @@ def handle_documents(message):
     active_scans[scan_id] = False
     
     try:
-        # إرسال رسالة أولية مع زر إيقاف الفحص
         stop_markup = InlineKeyboardMarkup()
         stop_markup.add(InlineKeyboardButton("⏹️ إيقاف الفحص", callback_data=f"stop_scan_{scan_id}"))
         
@@ -434,7 +432,6 @@ def handle_documents(message):
             bot.edit_message_text("❌ لم يتم العثور على ملفات نصية صالحة.", message.chat.id, status_msg.message_id)
             return
             
-        # جمع كافة الأسطر لحساب نسبة التقدم بدقة
         all_lines = []
         for txt_file in txt_files_to_check:
             try:
@@ -454,7 +451,6 @@ def handle_documents(message):
         
         with open(result_file_path, "w", encoding="utf-8") as res_file:
             for line in all_lines:
-                # التحقق هل طلب المستخدم إيقاف الفحص
                 if active_scans.get(scan_id, False):
                     bot.edit_message_text("⏹️ **تم إيقاف عملية الفحص بنجاح بناءً على طلبك.**", message.chat.id, status_msg.message_id)
                     break
@@ -464,7 +460,6 @@ def handle_documents(message):
                 if not line:
                     continue
                     
-                # تحديث شريط التقدم كل 5 أسطر أو في النهاية لسرعة الأداء
                 if processed_count % 5 == 0 or processed_count == total_lines:
                     percent = int((processed_count / total_lines) * 100)
                     try:
@@ -485,7 +480,6 @@ def handle_documents(message):
                     valid_count += 1
                     token_result = generate_token(netflix_id)
                     
-                    # صياغة الرسالة الإحترافية مع العلامات المائية ورابط الدخول
                     res_msg = "🎬 **حساب NETFLIX صالح وفعال** 🎬\n\n"
                     res_msg += f"🌍 البلد: `{account_info['country']}`\n"
                     res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
@@ -497,8 +491,9 @@ def handle_documents(message):
                     markup = InlineKeyboardMarkup()
                     if token_result.get('status') == 'Success':
                         token_val = token_result['token']
-                        pc_url = f"https://www.netflix.com/account?nftoken={token_val}"
-                        phone_url = f"https://netflix.com/unsupported?nftoken={token_val}"
+                        # روابط مباشرة صحيحة 100% تعمل على الكمبيوتر والهاتف
+                        pc_url = f"https://www.netflix.com/login?nftoken={token_val}"
+                        phone_url = f"https://www.netflix.com/browse?nftoken={token_val}"
                         res_msg += f"\n📱 رابط الدخول المباشر:\n`{phone_url}`\n"
                         markup.add(
                             InlineKeyboardButton("💻 PC Login", url=pc_url),
@@ -510,7 +505,6 @@ def handle_documents(message):
                             InlineKeyboardButton("📱 Phone Login", url="https://www.netflix.com")
                         )
                         
-                    # إضافة العلامة المائية الخاصة بفارس وقناته في نهاية الرسالة
                     res_msg += f"\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
                     
                     bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup)
@@ -519,7 +513,6 @@ def handle_documents(message):
                     save_to_stock(res_msg.replace('`', '').replace('*', ''))
                     time.sleep(0.5)
                     
-        # حذف زر الإيقاف عند الانتهاء وتحديث الرسالة النهائية
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
         except:
@@ -543,5 +536,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with Progress Bar & Stop Button...")
+    logger.info("Telegram Bot is running for Faris with fixed working token links...")
     bot.infinity_polling()
