@@ -311,9 +311,9 @@ def send_welcome(message):
             pass
             
     add_user_if_not_exists(user_id, referrer_id)
-    show_main_menu(message.chat.id, user_id)
+    show_main_menu(message.chat.id, user_id, message.message_id if hasattr(message, 'message_id') else None)
 
-def show_main_menu(chat_id, user_id):
+def show_main_menu(chat_id, user_id, message_id=None):
     markup = InlineKeyboardMarkup()
     markup.row_width = 1
     markup.add(
@@ -327,28 +327,35 @@ def show_main_menu(chat_id, user_id):
         markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
         
     welcome_text = f"🎬 **أهلاً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [@{DEVELOPER_USERNAME}](https://t.me/{DEVELOPER_USERNAME})\n\nاختر أحد الخيارات أدناه للبدء:"
-    bot.send_message(chat_id, welcome_text)
+    
+    if message_id:
+        try:
+            bot.edit_message_text(welcome_text, chat_id, message_id, reply_markup=markup)
+            return
+        except:
+            pass
+    bot.send_message(chat_id, welcome_text, reply_markup=markup)
 
-# ⚡ معالج الأزرار المطور للاستجابة الفورية (بدون أي تأخير)
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     user_id = call.from_user.id
     users = load_users()
     str_id = str(user_id)
     
-    # استجابة فورية لإلغاء دائرة التحميل في التليجرام
     try:
         bot.answer_callback_query(call.id)
     except:
         pass
     
     data = call.data
+    chat_id = call.message.chat.id
+    msg_id = call.message.message_id
     
     if data == "check_sub" or data == "btn_home":
-        show_main_menu(call.message.chat.id, user_id)
+        show_main_menu(chat_id, user_id, msg_id)
             
     elif data == "btn_check":
-        bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**")
+        bot.edit_message_text("📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري!**\n\n*(أو اضغط رجوع للعودة للقائمة الرئيسية)*", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home")))
         
     elif data == "btn_profile":
         points = "♾️ (نقاط بلا حدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
@@ -366,13 +373,14 @@ def handle_callback_query(call):
             f"🔗 **رابط الدعوة الخاص بك:**\n`{ref_link}`\n"
             "*(شارك الرابط مع أصدقائك واربح نقطتين عن كل شخص ينضم!)*"
         )
-        bot.send_message(call.message.chat.id, profile_text)
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
+        bot.edit_message_text(profile_text, chat_id, msg_id, reply_markup=markup)
         
     elif data == "btn_stock":
         if user_id != DEVELOPER_ID:
             current_points = users.get(str_id, {}).get("points", 0)
             if current_points < 1:
-                bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! قم بدعوة أصدقائك عبر رابط الدعوة لجمع النقاط.")
+                bot.edit_message_text("❌ رصيدك غير كافٍ! قم بدعوة أصدقائك عبر رابط الدعوة لجمع النقاط.", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home")))
                 return
             users[str_id]["points"] -= 1
             save_data(USERS_FILE, users)
@@ -388,12 +396,13 @@ def handle_callback_query(call):
                     InlineKeyboardButton("💻 PC Login", url=direct_url),
                     InlineKeyboardButton("📱 Phone Login", url=direct_url)
                 )
+            markup.add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
             
             watermarked_acc = f"{account}\n\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
             remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
-            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", reply_markup=markup if token_match else None)
+            bot.edit_message_text(f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", chat_id, msg_id, reply_markup=markup if token_match else markup)
         else:
-            bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
+            bot.edit_message_text("⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home")))
             
     elif data == "btn_admin":
         if user_id != DEVELOPER_ID:
@@ -414,7 +423,8 @@ def handle_callback_query(call):
             "▫️ لإنشاء كود هدية جديد:\n`/createcode [عدد النقاط]`\n\n"
             "▫️ لإذاعة رسالة لجميع المستخدمين:\n`/broadcast [الرسالة]`"
         )
-        bot.send_message(call.message.chat.id, admin_text)
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
+        bot.edit_message_text(admin_text, chat_id, msg_id, reply_markup=markup)
         
     elif data.startswith("stop_scan_"):
         scan_id = data.replace("stop_scan_", "")
@@ -663,5 +673,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running with optimized ultra-fast dispatcher...")
+    logger.info("Telegram Bot is running with lightning fast edit-message callbacks...")
     bot.infinity_polling(skip_pending=True)
