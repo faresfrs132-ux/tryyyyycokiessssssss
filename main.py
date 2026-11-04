@@ -26,7 +26,7 @@ CHANNEL_USERNAME = "@faresschannel"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode='Markdown')
 
 # 👑 إعدادات المطور الخاصة بك (فارس)
 DEVELOPER_ID = 8713916851
@@ -69,7 +69,7 @@ def add_user_if_not_exists(user_id, referrer_id=None):
             users[str(referrer_id)]["points"] += 2
             users[str_id]["referrals"] += 1
             try:
-                bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.", parse_mode='Markdown')
+                bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.")
             except:
                 pass
                 
@@ -327,27 +327,30 @@ def show_main_menu(chat_id, user_id):
         markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
         
     welcome_text = f"🎬 **أهلاً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [@{DEVELOPER_USERNAME}](https://t.me/{DEVELOPER_USERNAME})\n\nاختر أحد الخيارات أدناه للبدء:"
-    bot.send_message(chat_id, welcome_text, parse_mode='Markdown', reply_markup=markup)
+    bot.send_message(chat_id, welcome_text)
 
+# ⚡ معالج الأزرار المطور للاستجابة الفورية (بدون أي تأخير)
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
+def handle_callback_query(call):
     user_id = call.from_user.id
     users = load_users()
     str_id = str(user_id)
     
-    # ⚡ استجابة فورية لزر تليجرام لمنع التعليق
+    # استجابة فورية لإلغاء دائرة التحميل في التليجرام
     try:
         bot.answer_callback_query(call.id)
     except:
         pass
     
-    if call.data == "check_sub":
+    data = call.data
+    
+    if data == "check_sub" or data == "btn_home":
         show_main_menu(call.message.chat.id, user_id)
             
-    elif call.data == "btn_check":
-        bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**", parse_mode='Markdown')
+    elif data == "btn_check":
+        bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**")
         
-    elif call.data == "btn_profile":
+    elif data == "btn_profile":
         points = "♾️ (نقاط بلا حدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
         joined = users.get(str_id, {}).get("joined_date", "اليوم")
         refs = users.get(str_id, {}).get("referrals", 0)
@@ -363,9 +366,9 @@ def callback_query(call):
             f"🔗 **رابط الدعوة الخاص بك:**\n`{ref_link}`\n"
             "*(شارك الرابط مع أصدقائك واربح نقطتين عن كل شخص ينضم!)*"
         )
-        bot.send_message(call.message.chat.id, profile_text, parse_mode='Markdown')
+        bot.send_message(call.message.chat.id, profile_text)
         
-    elif call.data == "btn_stock":
+    elif data == "btn_stock":
         if user_id != DEVELOPER_ID:
             current_points = users.get(str_id, {}).get("points", 0)
             if current_points < 1:
@@ -388,11 +391,11 @@ def callback_query(call):
             
             watermarked_acc = f"{account}\n\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
             remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
-            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", parse_mode='Markdown', reply_markup=markup if token_match else None)
+            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", reply_markup=markup if token_match else None)
         else:
             bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
             
-    elif call.data == "btn_admin":
+    elif data == "btn_admin":
         if user_id != DEVELOPER_ID:
             return
             
@@ -411,12 +414,15 @@ def callback_query(call):
             "▫️ لإنشاء كود هدية جديد:\n`/createcode [عدد النقاط]`\n\n"
             "▫️ لإذاعة رسالة لجميع المستخدمين:\n`/broadcast [الرسالة]`"
         )
-        bot.send_message(call.message.chat.id, admin_text, parse_mode='Markdown')
+        bot.send_message(call.message.chat.id, admin_text)
         
-    elif call.data.startswith("stop_scan_"):
-        scan_id = call.data.replace("stop_scan_", "")
+    elif data.startswith("stop_scan_"):
+        scan_id = data.replace("stop_scan_", "")
         if scan_id in active_scans:
             active_scans[scan_id] = True
+
+def load_users():
+    return load_data(USERS_FILE)
 
 @bot.message_handler(commands=['addpoints'])
 def add_points_command(message):
@@ -424,7 +430,7 @@ def add_points_command(message):
         return
     parts = message.text.split()
     if len(parts) != 3:
-        bot.reply_to(message, "❌ الاستخدام: `/addpoints [ID] [العدد]`", parse_mode='Markdown')
+        bot.reply_to(message, "❌ الاستخدام: `/addpoints [ID] [العدد]`")
         return
     target_id = parts[1]
     try:
@@ -436,7 +442,7 @@ def add_points_command(message):
     if target_id in users:
         users[target_id]["points"] += amount
         save_data(USERS_FILE, users)
-        bot.reply_to(message, f"✅ تمت إضافة {amount} نقطة بنجاح للمستخدم `{target_id}`.", parse_mode='Markdown')
+        bot.reply_to(message, f"✅ تمت إضافة {amount} نقطة بنجاح للمستخدم `{target_id}`.")
     else:
         bot.reply_to(message, "❌ هذا المستخدم غير مسجل في البوت.")
 
@@ -446,7 +452,7 @@ def create_code_command(message):
         return
     parts = message.text.split()
     if len(parts) != 2:
-        bot.reply_to(message, "❌ الاستخدام: `/createcode [عدد النقاط]`", parse_mode='Markdown')
+        bot.reply_to(message, "❌ الاستخدام: `/createcode [عدد النقاط]`")
         return
     try:
         points = int(parts[1])
@@ -459,14 +465,14 @@ def create_code_command(message):
     codes[code] = {"points": points, "used": False}
     save_data(CODES_FILE, codes)
     
-    bot.reply_to(message, f"🎁 **تم إنشاء كود الهدية بنجاح!**\n\n🔑 الكود: `{code}`\n💰 القيمة: `{points}` نقطة\n\nأرسله للمستخدمين لشحنه عبر أمر `/redeem [الكود]`", parse_mode='Markdown')
+    bot.reply_to(message, f"🎁 **تم إنشاء كود الهدية بنجاح!**\n\n🔑 الكود: `{code}`\n💰 القيمة: `{points}` نقطة\n\nأرسله للمستخدمين لشحنه عبر أمر `/redeem [الكود]`")
 
 @bot.message_handler(commands=['redeem'])
 def redeem_code_command(message):
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) != 2:
-        bot.reply_to(message, "❌ الاستخدام الصحيح:\n`/redeem [الكود]`", parse_mode='Markdown')
+        bot.reply_to(message, "❌ الاستخدام الصحيح:\n`/redeem [الكود]`")
         return
     code = parts[1].strip()
     codes = load_data(CODES_FILE)
@@ -492,7 +498,7 @@ def redeem_code_command(message):
     users[str_id]["points"] += points
     save_data(USERS_FILE, users)
     
-    bot.reply_to(message, f"🎉 **مبروك يا غالي!**\nتم شحن الكود بنجاح وإضافة `{points}` نقطة إلى رصيدك.", parse_mode='Markdown')
+    bot.reply_to(message, f"🎉 **مبروك يا غالي!**\nتم شحن الكود بنجاح وإضافة `{points}` نقطة إلى رصيدك.")
 
 @bot.message_handler(commands=['broadcast'])
 def broadcast_command(message):
@@ -510,13 +516,13 @@ def broadcast_command(message):
     status_msg = bot.reply_to(message, "📢 جاري إرسال الإذاعة لجميع المستخدمين...")
     for uid in users:
         try:
-            bot.send_message(uid, f"📢 **إعلان هام من المطور:**\n\n{text}", parse_mode='Markdown')
+            bot.send_message(uid, f"📢 **إعلان هام من المطور:**\n\n{text}")
             success += 1
-            time.sleep(0.05)
+            time.sleep(0.02)
         except:
             fail += 1
             
-    bot.edit_message_text(f"✅ **تمت الإذاعة بنجاح!**\n- الإرسال الناجح: `{success}`\n- الفاشل: `{fail}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+    bot.edit_message_text(f"✅ **تمت الإذاعة بنجاح!**\n- الإرسال الناجح: `{success}`\n- الفاشل: `{fail}`", message.chat.id, status_msg.message_id)
 
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
@@ -531,7 +537,7 @@ def handle_documents(message):
         stop_markup = InlineKeyboardMarkup()
         stop_markup.add(InlineKeyboardButton("⏹️ إيقاف الفحص", callback_data=f"stop_scan_{scan_id}"))
         
-        status_msg = bot.send_message(message.chat.id, "⏳ **جاري تحضير الملف وبدء الفحص الإحترافي...**\n📊 التقدم: `0%`", parse_mode='Markdown', reply_markup=stop_markup)
+        status_msg = bot.send_message(message.chat.id, "⏳ **جاري تحضير الملف وبدء الفحص الإحترافي...**\n📊 التقدم: `0%`", reply_markup=stop_markup)
         
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
@@ -587,7 +593,7 @@ def handle_documents(message):
                     try:
                         bot.edit_message_text(
                             f"🔍 **جاري فحص الحسابات الآن...**\n📊 النسبة المئوية: `{percent}%` ({processed_count}/{total_lines})\n✅ الحسابات الفعالة: `{valid_count}`",
-                            message.chat.id, status_msg.message_id, parse_mode='Markdown', reply_markup=stop_markup
+                            message.chat.id, status_msg.message_id, reply_markup=stop_markup
                         )
                     except:
                         pass
@@ -628,11 +634,11 @@ def handle_documents(message):
                         
                     res_msg += f"\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
                     
-                    bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup)
+                    bot.send_message(message.chat.id, res_msg, reply_markup=markup)
                     
                     res_file.write(res_msg.replace('`', '').replace('*', '') + "\n" + "="*40 + "\n")
                     save_to_stock(res_msg.replace('`', '').replace('*', ''))
-                    time.sleep(0.2)
+                    time.sleep(0.1)
                     
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
@@ -641,9 +647,9 @@ def handle_documents(message):
             
         if valid_count > 0 and os.path.exists(result_file_path):
             with open(result_file_path, "rb") as rf:
-                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Faris* (@{DEVELOPER_USERNAME})", parse_mode='Markdown')
+                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Faris* (@{DEVELOPER_USERNAME})")
                 
-        bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}", parse_mode='Markdown')
+        bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}")
         
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ أثناء المعالجة: {str(e)}")
@@ -657,5 +663,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with ultra fast responses...")
+    logger.info("Telegram Bot is running with optimized ultra-fast dispatcher...")
     bot.infinity_polling(skip_pending=True)
