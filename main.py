@@ -20,20 +20,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Owner credit
-OWNER_CREDIT = "https://t.me/faresschannel"
+OWNER_CREDIT = "https://t.me/farxxess"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ⚠️ ضع هنا الآيدي (ID) الخاص بك لكي تظهر لك لوحة تحكم المطور
-DEVELOPER_ID = 8713916851  # <--- استبدل هذا الرقم بآيدي حسابك الحقيقي في تليجرام
+# ⚠️ ضع هنا الآيدي (ID) الخاص بك لوحة تحكم المطور
+DEVELOPER_ID = 8713916851  # <--- استبدل هذا الرقم بآيدي حسابك الحقيقي
 
 STOCK_FILE = "stock_accounts.txt"
 USERS_FILE = "users_data.json"
 
 def load_users():
-    """تحميل بيانات المستخدمين والنقاط"""
     if not os.path.exists(USERS_FILE):
         return {}
     try:
@@ -43,7 +42,6 @@ def load_users():
         return {}
 
 def save_users(users_data):
-    """حفظ بيانات المستخدمين والنقاط"""
     try:
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(users_data, f, indent=4)
@@ -51,7 +49,6 @@ def save_users(users_data):
         logger.error(f"Error saving users: {e}")
 
 def add_user_if_not_exists(user_id):
-    """إضافة المستخدم برصيد افتراضي (مثلاً 3 نقاط مجانية عند البدء)"""
     users = load_users()
     str_id = str(user_id)
     if str_id not in users:
@@ -265,7 +262,6 @@ def extract_zip_and_get_files(zip_path, extract_dir):
     except:
         return []
 
-# واجهة الأزرار عند البداية
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -279,14 +275,12 @@ def send_welcome(message):
         InlineKeyboardButton("💰 رصيدي النقدي", callback_data="btn_balance")
     )
     
-    # إضافة لوحة التحكم إذا كان المستخدم هو المطور
     if user_id == DEVELOPER_ID:
         markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور", callback_data="btn_admin"))
         
     welcome_text = "🎬 أهلاً بك في بوت فحص نتفليكس الذكي!\nاختر أحد الخيارات أدناه:"
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
 
-# التعامل مع الضغط على الأزرار
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     user_id = call.from_user.id
@@ -294,41 +288,37 @@ def callback_query(call):
     str_id = str(user_id)
     
     if call.data == "btn_check":
-        bot.answer_callbackQuery(call.id)
+        bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📂 أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ فحص الحسابات الشغالة تلقائياً!")
         
     elif call.data == "btn_balance":
         points = users.get(str_id, {}).get("points", 0)
-        bot.answer_callbackQuery(call.id, text=f"رصيدك الحالي هو: {points} نقطة", show_alert=True)
+        bot.answer_callback_query(call.id, text=f"رصيدك الحالي هو: {points} نقطة", show_alert=True)
         
     elif call.data == "btn_stock":
-        bot.answer_callbackQuery(call.id)
+        bot.answer_callback_query(call.id)
         current_points = users.get(str_id, {}).get("points", 0)
         
         if current_points < 1:
             bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! تحتاج إلى نقطة واحدة (1) لسحب حساب من الذاكرة.")
- خصومات أو طرق زيادة النقاط)
             return
             
         account = get_random_account_from_stock()
         if account:
-            # خصم نقطة
             users[str_id]["points"] -= 1
             save_users(users)
-            
             bot.send_message(call.message.chat.id, f"🎁 *إليك حسابك المسحوب (خصم نقطة واحدة):*\n\n{account}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown')
         else:
             bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
             
     elif call.data == "btn_admin":
         if user_id != DEVELOPER_ID:
-            bot.answer_callbackQuery(call.id, text="هذا الخيار خاص بالمطور فقط!", show_alert=True)
+            bot.answer_callback_query(call.id, text="هذا الخيار خاص بالمطور فقط!", show_alert=True)
             return
             
-        bot.answer_callbackQuery(call.id)
+        bot.answer_callback_query(call.id)
         total_users = len(users)
         
-        # حساب عدد الحسابات في الذاكرة
         stock_count = 0
         if os.path.exists(STOCK_FILE):
             with open(STOCK_FILE, "r", encoding="utf-8") as f:
@@ -344,7 +334,6 @@ def callback_query(call):
         )
         bot.send_message(call.message.chat.id, admin_text, parse_mode='Markdown')
 
-# أمر إضافة النقاط للمطور: /addpoints ID AMOUNT
 @bot.message_handler(commands=['addpoints'])
 def add_points_command(message):
     if message.from_user.id != DEVELOPER_ID:
@@ -370,7 +359,6 @@ def add_points_command(message):
     else:
         bot.reply_to(message, "❌ هذا المستخدم غير مسجل في قاعدة بيانات البوت بعد (يجب عليه الضغط على /start أولاً).")
 
-# استقبال الملفات والفحص
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
     user_id = message.from_user.id
