@@ -67,9 +67,9 @@ def add_user_if_not_exists(user_id, referrer_id=None):
         
         if referrer_id and str(referrer_id) in users and str(referrer_id) != str_id:
             users[str(referrer_id)]["points"] += 2
-            users[str_id]["referrals"] += 1
+            users[str(referrer_id)]["referrals"] += 1
             try:
-                bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.")
+                bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.", disable_web_page_preview=True)
             except:
                 pass
                 
@@ -326,15 +326,15 @@ def show_main_menu(chat_id, user_id, message_id=None):
     if int(user_id) == DEVELOPER_ID:
         markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
         
-    welcome_text = f"🎬 **أهلاً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [@{DEVELOPER_USERNAME}](https://t.me/{DEVELOPER_USERNAME})\n\nاختر أحد الخيارات أدناه للبدء:"
+    welcome_text = f"🎬 **أهلاً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* فارس ([@{DEVELOPER_USERNAME}](https://t.me/{DEVELOPER_USERNAME}))\n\nاختر أحد الخيارات أدناه للبدء:"
     
     if message_id:
         try:
-            bot.edit_message_text(welcome_text, chat_id, message_id, reply_markup=markup)
+            bot.edit_message_text(welcome_text, chat_id, message_id, reply_markup=markup, disable_web_page_preview=True)
             return
         except:
             pass
-    bot.send_message(chat_id, welcome_text, reply_markup=markup)
+    bot.send_message(chat_id, welcome_text, reply_markup=markup, disable_web_page_preview=True)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
@@ -355,7 +355,8 @@ def handle_callback_query(call):
         show_main_menu(chat_id, user_id, msg_id)
             
     elif data == "btn_check":
-        bot.edit_message_text("📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري!**\n\n*(أو اضغط رجوع للعودة للقائمة الرئيسية)*", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home")))
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
+        bot.edit_message_text("📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري!**", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
         
     elif data == "btn_profile":
         points = "♾️ (نقاط بلا حدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
@@ -374,13 +375,14 @@ def handle_callback_query(call):
             "*(شارك الرابط مع أصدقائك واربح نقطتين عن كل شخص ينضم!)*"
         )
         markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
-        bot.edit_message_text(profile_text, chat_id, msg_id, reply_markup=markup)
+        bot.edit_message_text(profile_text, chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
         
     elif data == "btn_stock":
         if user_id != DEVELOPER_ID:
             current_points = users.get(str_id, {}).get("points", 0)
             if current_points < 1:
-                bot.edit_message_text("❌ رصيدك غير كافٍ! قم بدعوة أصدقائك عبر رابط الدعوة لجمع النقاط.", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home")))
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
+                bot.edit_message_text("❌ رصيدك غير كافٍ! قم بدعوة أصدقائك عبر رابط الدعوة لجمع النقاط.", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
                 return
             users[str_id]["points"] -= 1
             save_data(USERS_FILE, users)
@@ -400,9 +402,10 @@ def handle_callback_query(call):
             
             watermarked_acc = f"{account}\n\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
             remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
-            bot.edit_message_text(f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", chat_id, msg_id, reply_markup=markup if token_match else markup)
+            bot.edit_message_text(f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
         else:
-            bot.edit_message_text("⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home")))
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
+            bot.edit_message_text("⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
             
     elif data == "btn_admin":
         if user_id != DEVELOPER_ID:
@@ -424,7 +427,7 @@ def handle_callback_query(call):
             "▫️ لإذاعة رسالة لجميع المستخدمين:\n`/broadcast [الرسالة]`"
         )
         markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
-        bot.edit_message_text(admin_text, chat_id, msg_id, reply_markup=markup)
+        bot.edit_message_text(admin_text, chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
         
     elif data.startswith("stop_scan_"):
         scan_id = data.replace("stop_scan_", "")
@@ -526,7 +529,7 @@ def broadcast_command(message):
     status_msg = bot.reply_to(message, "📢 جاري إرسال الإذاعة لجميع المستخدمين...")
     for uid in users:
         try:
-            bot.send_message(uid, f"📢 **إعلان هام من المطور:**\n\n{text}")
+            bot.send_message(uid, f"📢 **إعلان هام من المطور:**\n\n{text}", disable_web_page_preview=True)
             success += 1
             time.sleep(0.02)
         except:
@@ -644,7 +647,7 @@ def handle_documents(message):
                         
                     res_msg += f"\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
                     
-                    bot.send_message(message.chat.id, res_msg, reply_markup=markup)
+                    bot.send_message(message.chat.id, res_msg, reply_markup=markup, disable_web_page_preview=True)
                     
                     res_file.write(res_msg.replace('`', '').replace('*', '') + "\n" + "="*40 + "\n")
                     save_to_stock(res_msg.replace('`', '').replace('*', ''))
@@ -659,7 +662,7 @@ def handle_documents(message):
             with open(result_file_path, "rb") as rf:
                 bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Faris* (@{DEVELOPER_USERNAME})")
                 
-        bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}")
+        bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}", disable_web_page_preview=True)
         
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ أثناء المعالجة: {str(e)}")
@@ -673,5 +676,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running with lightning fast edit-message callbacks...")
+    logger.info("Telegram Bot is running with disabled web page previews for clean buttons...")
     bot.infinity_polling(skip_pending=True)
