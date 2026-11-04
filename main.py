@@ -433,7 +433,6 @@ def handle_documents(message):
                         
                     account_info = check_netflix_cookie({"NetflixId": netflix_id})
                     
-                    # شرط الصلاحية الحقيقية: يجب أن يكون الحساب شغالاً والباقة ومعلومات التجديد معروفة وليست Unknown
                     if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
                         valid_count += 1
                         token_result = generate_token(netflix_id)
