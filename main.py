@@ -27,7 +27,7 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzH
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # ⚠️ ضع هنا الآيدي (ID) الخاص بك لكي تظهر لك لوحة تحكم المطور
-DEVELOPER_ID = 123456789  # <--- استبدل هذا الرقم بآيدي حسابك الحقيقي في تليجرام
+DEVELOPER_ID = 8713916851  # <--- استبدل هذا الرقم بآيدي حسابك الحقيقي في تليجرام
 
 STOCK_FILE = "stock_accounts.txt"
 USERS_FILE = "users_data.json"
