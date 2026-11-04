@@ -94,39 +94,6 @@ def extract_netflix_id(content):
     
     return None
 
-def extract_profiles_from_manage_profiles(response_text):
-    profiles = []
-    try:
-        profiles_match = re.search(r'"profiles"\s*:\s*({[^}]+})', response_text)
-        if profiles_match:
-            profiles_json_str = profiles_match.group(1)
-            def unescape_hex(match):
-                hex_code = match.group(1)
-                try:
-                    return chr(int(hex_code, 16))
-                except:
-                    return match.group(0)
-            cleaned_json = re.sub(r'\\x([0-9a-fA-F]{2})', unescape_hex, profiles_json_str)
-            profiles_data = json.loads(f'{{{cleaned_json}}}')
-            for profile_id, profile_data in profiles_data.items():
-                if isinstance(profile_data, dict):
-                    summary = profile_data.get('summary', {})
-                    if isinstance(summary, dict):
-                        value = summary.get('value', {})
-                        if isinstance(value, dict):
-                            profile_name = value.get('profileName')
-                            if profile_name:
-                                profiles.append(profile_name)
-    except json.JSONDecodeError:
-        try:
-            profile_matches = re.findall(r'"profileName"\s*:\s*"([^"]+)"', response_text)
-            for profile in profile_matches:
-                profile = re.sub(r'\\x([0-9a-fA-F]{2})', lambda m: chr(int(m.group(1), 16)), profile)
-                profiles.append(profile)
-        except:
-            pass
-    return profiles
-
 def extract_next_billing_date(response_text):
     """Extract next billing date from GraphQL response"""
     try:
@@ -160,8 +127,6 @@ def check_netflix_cookie(cookie_dict):
     try:
         resp = session.get(url, headers=headers, timeout=30)
         txt = resp.text
-        
-        logger.info(f"Response status: {resp.status_code}")
         
         if any(phrase in txt.lower() for phrase in ['"mode":"login"']):
             return {'ok': False, 'err': 'Invalid cookie (login page detected)', 'cookie': cookie_dict}
@@ -262,8 +227,6 @@ def check_netflix_cookie(cookie_dict):
         if not is_valid and "NetflixId" in cookie_dict:
             is_valid = any(phrase in txt for phrase in ['Account & Billing', 'membershipStatus', 'planName'])
             is_premium = is_valid
-
-        logger.info(f"Account validation - Valid: {is_valid}, Premium: {is_premium}")
 
         return {
             'ok': is_valid,
@@ -388,7 +351,7 @@ def extract_zip_and_get_files(zip_path, extract_dir):
 # تليجرام بوت - معالجة المستندات والملفات والرسائل النصية
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "🎬 أهلاً بك في بوت فحص كوكيز Netflix الشامل!\n\nأرسل لي نص الكوكي مباشرة، أو ارفع ملف `.txt` أو ملف مضغوط `.zip` وسأقوم بفحصه بدقة.")
+    bot.reply_to(message, "🎬 أهلاً بك في بوت فحص كوكيز Netflix الشامل!\n\nأرسل لي نص الكوكي مباشرة، أو ارفع ملف `.txt` أو ملف مضغوط `.zip` وسأقوم بفحصه بدقة وإرسال الحسابات الشغالة فقط.")
 
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
@@ -479,7 +442,6 @@ def handle_text_message(message):
         
     account_info = check_netflix_cookie({"NetflixId": netflix_id})
     
-    # التحقق من أن الحساب صالح وباقته حقيقية وليست مجهولة
     if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
         token_result = generate_token(netflix_id)
         
@@ -497,54 +459,7 @@ def handle_text_message(message):
             
         bot.reply_to(message, res_msg, parse_mode='Markdown')
     else:
-        bot.reply_to(message, "❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو الوهمي).", parse_mode='Markdown')
-                        time.sleep(1) # توقف قصير لتفادي حظر تليجرام
-            except Exception as e:
-                logger.error(f"Error processing line/file: {e}")
-                
-        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال.")
-    except Exception as e:
-        bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
-    finally:
-        for temp_dir in temp_dirs:
-            try:
-                shutil.rmtree(temp_dir)
-            except:
-                pass
-
-@bot.message_handler(func=lambda message: True)
-def handle_text_message(message):
-    content = message.text
-    if not content or content.startswith('/'):
-        return
-        
-    bot.reply_to(message, "⏳ جاري فحص الكوكي والتحقق من الحساب...")
-    netflix_id = extract_netflix_id(content)
-    
-    if not netflix_id:
-        bot.reply_to(message, "❌ لم يتم العثور على `NetflixId` صالح في النص.")
-        return
-        
-    account_info = check_netflix_cookie({"NetflixId": netflix_id})
-    
-    if account_info["ok"]:
-        token_result = generate_token(netflix_id)
-        
-        res_msg = "🎬 *TÀI KHOẢN NETFLIX HỢP LỆ* 🎬\n\n"
-        res_msg += f"🌍 *البلد:* `{account_info['country']}`\n"
-        res_msg += f"📦 *الباقة:* `{account_info['plan']}`\n"
-        res_msg += f"💰 *السعر:* `{account_info['plan_price']}`\n"
-        res_msg += f"📅 *التجديد:* `{account_info['next_billing']}`\n"
-        res_msg += f"👥 *الملفات الشخصية:* `{account_info['profiles']}`\n"
-        res_msg += f"📧 *البريد:* `{account_info['email']}`\n"
-        
-        if token_result.get('status') == 'Success':
-            mobile_url = f"https://netflix.com/unsupported?nftoken={token_result['token']}"
-            res_msg += f"\n📱 *رابط الدخول المباشر:*\n`{mobile_url}`"
-            
-        bot.reply_to(message, res_msg, parse_mode='Markdown')
-    else:
-        bot.reply_to(message, f"❌ الحساب غير صالح أو منتهي:\n`{account_info.get('err', 'Unknown')}`", parse_mode='Markdown')
+        bot.reply_to(message, "❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).", parse_mode='Markdown')
 
 if __name__ == '__main__':
     logger.info("Telegram Bot is running...")
