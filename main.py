@@ -19,7 +19,7 @@ import random
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Owner credit & Channel info (تم تحديث رابط قناتك بدقة)
+# Owner credit & Channel info
 OWNER_CREDIT = "Faris - https://t.me/faresschannel"
 CHANNEL_LINK = "https://t.me/faresschannel"
 CHANNEL_USERNAME = "@faresschannel"
@@ -54,17 +54,6 @@ def save_data(filepath, data):
     except Exception as e:
         logger.error(f"Error saving data to {filepath}: {e}")
 
-def check_subscription(user_id):
-    if int(user_id) == DEVELOPER_ID:
-        return True
-    try:
-        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            return True
-    except Exception as e:
-        logger.error(f"Sub check error: {e}")
-    return False
-
 def add_user_if_not_exists(user_id, referrer_id=None):
     users = load_data(USERS_FILE)
     str_id = str(user_id)
@@ -76,9 +65,8 @@ def add_user_if_not_exists(user_id, referrer_id=None):
             "referrals": 0
         }
         
-        # نظام الدعوات
         if referrer_id and str(referrer_id) in users and str(referrer_id) != str_id:
-            users[str(referrer_id)]["points"] += 2  # منح 2 نقاط للمُحيل
+            users[str(referrer_id)]["points"] += 2
             users[str(referrer_id)]["referrals"] += 1
             try:
                 bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.", parse_mode='Markdown')
@@ -220,7 +208,7 @@ def check_netflix_cookie(cookie_dict):
         'Upgrade-Insecure-Requests': '1'
     }
     try:
-        resp = session.get(url, headers=headers, timeout=30)
+        resp = session.get(url, headers=headers, timeout=15)
         txt = resp.text
         if any(phrase in txt.lower() for phrase in ['"mode":"login"']):
             return {'ok': False}
@@ -285,7 +273,7 @@ def generate_token(netflix_id):
         'Cookie': f"NetflixId={netflix_id}"
     }
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
+        response = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
         data = response.json()
         if "value" in data and data["value"] and "account" in data["value"]:
             token_data = data["value"]["account"]["token"]["default"]
@@ -315,7 +303,6 @@ def extract_zip_and_get_files(zip_path, extract_dir):
 def send_welcome(message):
     user_id = message.from_user.id
     
-    # استخراج معرف الشخص الداعي إن وجد في رابط البدء (مثل /start ref12345)
     args = message.text.split()
     referrer_id = None
     if len(args) > 1 and args[1].startswith('ref'):
@@ -325,15 +312,6 @@ def send_welcome(message):
             pass
             
     add_user_if_not_exists(user_id, referrer_id)
-    
-    # فحص الاشتراك الإجباري في القناة
-    if not check_subscription(user_id):
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📢 اشترك في قناة المطور", url=CHANNEL_LINK))
-        markup.add(InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="check_sub"))
-        bot.send_message(message.chat.id, f"⚠️ **عذراً يا عسل!**\nيجب عليك الاشتراค في قناتنا الرسمية أولاً لتتمكن من استخدام البوت:\n\n👉 {CHANNEL_LINK}", parse_mode='Markdown', reply_markup=markup)
-        return
-
     show_main_menu(message.chat.id, user_id)
 
 def show_main_menu(chat_id, user_id):
@@ -358,26 +336,19 @@ def callback_query(call):
     users = load_users()
     str_id = str(user_id)
     
+    # استجابة فورية لزر التليجرام لكي لا يعلق أبداً
+    try:
+        bot.answer_callback_query(call.id)
+    except:
+        pass
+    
     if call.data == "check_sub":
-        if check_subscription(user_id):
-            bot.answer_callback_query(call.id, text="✅ تم التحقق بنجاح!", show_alert=True)
-            try:
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-            except:
-                pass
-            show_main_menu(call.message.chat.id, user_id)
-        else:
-            bot.answer_callback_query(call.id, text="❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
+        show_main_menu(call.message.chat.id, user_id)
             
     elif call.data == "btn_check":
-        if not check_subscription(user_id):
-            bot.answer_callback_query(call.id, text="عليك الاشتراك في القناة أولاً!", show_alert=True)
-            return
-        bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**", parse_mode='Markdown')
         
     elif call.data == "btn_profile":
-        bot.answer_callback_query(call.id)
         points = "♾️ (نقاط بلا حدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
         joined = users.get(str_id, {}).get("joined_date", "اليوم")
         refs = users.get(str_id, {}).get("referrals", 0)
@@ -396,11 +367,6 @@ def callback_query(call):
         bot.send_message(call.message.chat.id, profile_text, parse_mode='Markdown')
         
     elif call.data == "btn_stock":
-        if not check_subscription(user_id):
-            bot.answer_callback_query(call.id, text="عليك الاشتراك في القناة أولاً!", show_alert=True)
-            return
-        bot.answer_callback_query(call.id)
-        
         if user_id != DEVELOPER_ID:
             current_points = users.get(str_id, {}).get("points", 0)
             if current_points < 1:
@@ -429,10 +395,8 @@ def callback_query(call):
             
     elif call.data == "btn_admin":
         if user_id != DEVELOPER_ID:
-            bot.answer_callback_query(call.id, text="هذا الخيار خاص بالمطور فارس فقط!", show_alert=True)
             return
             
-        bot.answer_callback_query(call.id)
         total_users = len(users)
         stock_count = 0
         if os.path.exists(STOCK_FILE):
@@ -454,7 +418,6 @@ def callback_query(call):
         scan_id = call.data.replace("stop_scan_", "")
         if scan_id in active_scans:
             active_scans[scan_id] = True
-            bot.answer_callback_query(call.id, text="⏹️ تم طلب إيقاف الفحص بنجاح!", show_alert=True)
 
 @bot.message_handler(commands=['addpoints'])
 def add_points_command(message):
@@ -550,7 +513,7 @@ def broadcast_command(message):
         try:
             bot.send_message(uid, f"📢 **إعلان هام من المطور:**\n\n{text}", parse_mode='Markdown')
             success += 1
-            time.sleep(0.1)
+            time.sleep(0.05)
         except:
             fail += 1
             
@@ -559,10 +522,6 @@ def broadcast_command(message):
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
     user_id = message.from_user.id
-    if not check_subscription(user_id):
-        bot.reply_to(message, f"⚠️ يجب عليك الاشتراك في قناة البوت أولاً: {CHANNEL_LINK}")
-        return
-        
     add_user_if_not_exists(user_id)
     
     temp_dirs = []
@@ -674,7 +633,7 @@ def handle_documents(message):
                     
                     res_file.write(res_msg.replace('`', '').replace('*', '') + "\n" + "="*40 + "\n")
                     save_to_stock(res_msg.replace('`', '').replace('*', ''))
-                    time.sleep(0.5)
+                    time.sleep(0.2)
                     
         try:
             bot.delete_message(message.chat.id, status_msg.message_id)
@@ -699,5 +658,6 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with all pro features enabled...")
-    bot.infinity_polling()
+    logger.info("Telegram Bot is running for Faris with lightning fast response...")
+    # تم إضافة skip_pending=True لتفريغ الرسائل القديمة ومنع تعليق البوت
+    bot.infinity_polling(skip_pending=True)
