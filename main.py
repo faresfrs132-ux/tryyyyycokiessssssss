@@ -608,7 +608,7 @@ def handle_documents(message):
                             InlineKeyboardButton("📱 Phone Login", url=fallback_url)
                         )
                         
-                    res_msg += f"\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
+                    res_msg += f"\n👑 *Dev:* @farxxes | [Channel](https://t.me/farxxes)"
                     
                     bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup)
                     
@@ -623,7 +623,7 @@ def handle_documents(message):
             
         if valid_count > 0 and os.path.exists(result_file_path):
             with open(result_file_path, "rb") as rf:
-                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Faris* (@farxxess)", parse_mode='Markdown')
+                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Fares* (@farxxes)", parse_mode='Markdown')
                 
         bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}", parse_mode='Markdown')
         
