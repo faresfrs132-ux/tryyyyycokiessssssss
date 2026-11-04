@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Owner credit
-OWNER_CREDIT = "Huy Vũ - https://huyvu2512.io.vn"
+OWNER_CREDIT = "https://t.me/faresschannel"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
