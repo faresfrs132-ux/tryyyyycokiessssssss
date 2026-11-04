@@ -67,7 +67,7 @@ def add_user_if_not_exists(user_id, referrer_id=None):
         
         if referrer_id and str(referrer_id) in users and str(referrer_id) != str_id:
             users[str(referrer_id)]["points"] += 2
-            users[str(referrer_id)]["referrals"] += 1
+            users[str_id]["referrals"] += 1
             try:
                 bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.", parse_mode='Markdown')
             except:
@@ -302,7 +302,6 @@ def extract_zip_and_get_files(zip_path, extract_dir):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
-    
     args = message.text.split()
     referrer_id = None
     if len(args) > 1 and args[1].startswith('ref'):
@@ -336,7 +335,7 @@ def callback_query(call):
     users = load_users()
     str_id = str(user_id)
     
-    # استجابة فورية لزر التليجرام لكي لا يعلق أبداً
+    # ⚡ استجابة فورية لزر تليجرام لمنع التعليق
     try:
         bot.answer_callback_query(call.id)
     except:
@@ -658,6 +657,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with lightning fast response...")
-    # تم إضافة skip_pending=True لتفريغ الرسائل القديمة ومنع تعليق البوت
+    logger.info("Telegram Bot is running for Faris with ultra fast responses...")
     bot.infinity_polling(skip_pending=True)
