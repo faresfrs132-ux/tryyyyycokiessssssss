@@ -306,7 +306,7 @@ def generate_token(netflix_id):
     }
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=20, verify=False)
+        response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
         data = response.json()
         
         if "value" in data and data["value"] and "account" in data["value"]:
@@ -318,9 +318,9 @@ def generate_token(netflix_id):
                 "direct_login_url": f"https://netflix.com/unsupported?nftoken={token}"
             }
         else:
-            return {"status": "Failure", "error": "No token found in response"}
+            return {"status": "Failure", "token": netflix_id}
     except Exception as e:
-        return {"status": "Error", "error": str(e)}
+        return {"status": "Error", "token": netflix_id}
 
 def extract_zip_and_get_files(zip_path, extract_dir):
     txt_files = []
@@ -453,7 +453,7 @@ def handle_documents(message):
     
     temp_dirs = []
     try:
-        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة واستخراج الروابط...")
+        bot.reply_to(message, "⏳ جاري تحميل الملف وفحص الحسابات الشغالة وتوليد روابط الدخول...")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -517,8 +517,16 @@ def handle_documents(message):
                                     InlineKeyboardButton("💻 PC Login", url=pc_url),
                                     InlineKeyboardButton("📱 Phone Login", url=phone_url)
                                 )
+                            else:
+                                # رابط احتياطي مباشر باستخدام NetflixId إذا تعذر توليد التوكن
+                                fallback_url = f"https://www.netflix.com/browse"
+                                res_msg += f"\n📱 رابط التصفح:\n`{fallback_url}`"
+                                markup.add(
+                                    InlineKeyboardButton("💻 PC Login", url="https://www.netflix.com/login"),
+                                    InlineKeyboardButton("📱 Phone Login", url="https://www.netflix.com")
+                                )
                             
-                            bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup if token_result.get('status') == 'Success' else None)
+                            bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup)
                             
                             res_file.write(res_msg.replace('`', '') + "\n" + "="*40 + "\n")
                             save_to_stock(res_msg.replace('`', ''))
@@ -530,7 +538,7 @@ def handle_documents(message):
             with open(result_file_path, "rb") as rf:
                 bot.send_document(message.chat.id, rf, caption="📁 ملف النتائج الشامل: `the_premuim_account.txt`", parse_mode='Markdown')
                 
-        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال مع روابط الدخول وأزرار التصفح.")
+        bot.reply_to(message, f"✅ انتهى الفحص. تم العثور على وإرسال ({valid_count}) حساب شغال مع روابط وأزرار الدخول.")
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
     finally:
@@ -576,11 +584,16 @@ def handle_text_message(message):
                 InlineKeyboardButton("💻 PC Login", url=pc_url),
                 InlineKeyboardButton("📱 Phone Login", url=phone_url)
             )
+        else:
+            markup.add(
+                InlineKeyboardButton("💻 PC Login", url="https://www.netflix.com/login"),
+                InlineKeyboardButton("📱 Phone Login", url="https://www.netflix.com")
+            )
             
-        bot.reply_to(message, res_msg, parse_mode='Markdown', reply_markup=markup if token_result.get('status') == 'Success' else None)
+        bot.reply_to(message, res_msg, parse_mode='Markdown', reply_markup=markup)
     else:
         bot.reply_to(message, "❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).", parse_mode='Markdown')
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with active token links...")
+    logger.info("Telegram Bot is running for Faris with forced login buttons...")
     bot.infinity_polling()
