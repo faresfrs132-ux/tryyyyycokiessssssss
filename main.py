@@ -20,14 +20,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Owner credit & Channel info
-OWNER_CREDIT = "Faris - https://t.me/farxxess"
-CHANNEL_LINK = "https://t.me/farxxess"
+OWNER_CREDIT = "Faris - https://t.me/@farxxes"
+CHANNEL_LINK = "https://t.me/faresschannel"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# 👑 إعدادات المطور الخاصة بك (فارس)
+# 👑 إعدادات المطور الخاصة بك (فارس) - نقاط بلا حدود
 DEVELOPER_ID = 8713916851
 
 STOCK_FILE = "stock_accounts.txt"
@@ -56,8 +56,15 @@ def add_user_if_not_exists(user_id):
     users = load_users()
     str_id = str(user_id)
     if str_id not in users:
-        users[str_id] = {"points": 3, "joined_date": datetime.now().strftime('%Y-%m-%d')}
+        # المطور يحصل تلقائياً على نقاط مالا نهاية (999999) والمستخدمين العاديين 3 نقاط
+        initial_points = 999999 if int(user_id) == DEVELOPER_ID else 3
+        users[str_id] = {"points": initial_points, "joined_date": datetime.now().strftime('%Y-%m-%d')}
         save_users(users)
+    else:
+        # تأكيد دائم بأن نقاط المطور لا تنتهي أبداً
+        if int(user_id) == DEVELOPER_ID:
+            users[str_id]["points"] = 999999
+            save_users(users)
 
 def save_to_stock(account_text):
     try:
@@ -385,7 +392,7 @@ def send_welcome(message):
     markup.row_width = 1
     markup.add(
         InlineKeyboardButton("📂 فحص ملفات (TXT / ZIP)", callback_data="btn_check"),
-        InlineKeyboardButton("🎁 سحب حساب من الذاكرة (1 نقطة)", callback_data="btn_stock"),
+        InlineKeyboardButton("🎁 سحب حساب من الذاكرة (نقاط بلا حدود)", callback_data="btn_stock"),
         InlineKeyboardButton("💰 رصيدي النقدي", callback_data="btn_balance"),
         InlineKeyboardButton("📢 قناة البوت", url=CHANNEL_LINK)
     )
@@ -407,22 +414,23 @@ def callback_query(call):
         bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**", parse_mode='Markdown')
         
     elif call.data == "btn_balance":
-        points = users.get(str_id, {}).get("points", 0)
-        bot.answer_callback_query(call.id, text=f"رصيدك الحالي هو: {points} نقطة", show_alert=True)
+        points = "♾️ (رصيد غير محدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
+        bot.answer_callback_query(call.id, text=f"رصيدك الحالي هو: {points}", show_alert=True)
         
     elif call.data == "btn_stock":
         bot.answer_callback_query(call.id)
-        current_points = users.get(str_id, {}).get("points", 0)
         
-        if current_points < 1:
-            bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! تحتاج إلى نقطة واحدة (1) لسحب حساب من الذاكرة.")
-            return
-            
-        account = get_random_account_from_stock()
-        if account:
+        # إذا لم يكن مطوراً، نتحقق من نقاطه ونخصم نقطة
+        if user_id != DEVELOPER_ID:
+            current_points = users.get(str_id, {}).get("points", 0)
+            if current_points < 1:
+                bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! تحتاج إلى نقطة واحدة (1) لسحب حساب من الذاكرة.")
+                return
             users[str_id]["points"] -= 1
             save_users(users)
-            
+        
+        account = get_random_account_from_stock()
+        if account:
             markup = InlineKeyboardMarkup()
             token_match = re.search(r'nftoken=([^\s]+)', account)
             if token_match:
@@ -434,7 +442,8 @@ def callback_query(call):
                 )
             
             watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
-            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {users[str_id]['points']} نقطة", parse_mode='Markdown', reply_markup=markup if token_match else None)
+            remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
+            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", parse_mode='Markdown', reply_markup=markup if token_match else None)
         else:
             bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
             
@@ -453,7 +462,8 @@ def callback_query(call):
         admin_text = (
             "⚙️ **لوحة تحكم المطور (فارس)**\n\n"
             f"👥 إجمالي المستخدمين: `{total_users}`\n"
-            f"📦 الحسابات المتاحة في الذاكرة: `{stock_count}` حساب\n\n"
+            f"📦 الحسابات المتاحة في الذاكرة: `{stock_count}` حساب\n"
+            f"👑 رصيدك كـ مطور: `نقاط بلا حدود (♾️)`\n\n"
             "▫️ لإضافة نقاط لمستخدم، أرسل الأمر بالشكل التالي:\n"
             "`/addpoints [ID] [العدد]`"
         )
@@ -629,5 +639,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with native token generation...")
+    logger.info("Telegram Bot is running for Faris with unlimited developer points...")
     bot.infinity_polling()
