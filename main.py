@@ -66,8 +66,8 @@ def add_user_if_not_exists(user_id, referrer_id=None):
         }
         
         if referrer_id and str(referrer_id) in users and str(referrer_id) != str_id:
-            users[str(referrer_id)]["points"] += 2
-            users[str(referrer_id)]["referrals"] += 1
+            users[str_id]["points"] += 2
+            users[str_id]["referrals"] += 1
             try:
                 bot.send_message(referrer_id, "🎉 انضم شخص جديد عبر رابط دعوتك! تم منحك `2` نقطة إضافية.", disable_web_page_preview=True)
             except:
@@ -389,20 +389,9 @@ def handle_callback_query(call):
         
         account = get_random_account_from_stock()
         if account:
-            markup = InlineKeyboardMarkup()
-            token_match = re.search(r'nftoken=([^\s]+)', account)
-            if token_match:
-                t_val = token_match.group(1)
-                direct_url = f"https://netflix.com/unsupported?nftoken={t_val}"
-                markup.add(
-                    InlineKeyboardButton("💻 PC Login", url=direct_url),
-                    InlineKeyboardButton("📱 Phone Login", url=direct_url)
-                )
-            markup.add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
-            
-            watermarked_acc = f"{account}\n\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
             remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
-            bot.edit_message_text(f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
+            bot.edit_message_text(f"{account}\n\n💰 رصيدك المتبقي: {remaining_display}", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
         else:
             markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="btn_home"))
             bot.edit_message_text("⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!", chat_id, msg_id, reply_markup=markup, disable_web_page_preview=True)
@@ -621,36 +610,29 @@ def handle_documents(message):
                     valid_count += 1
                     token_result = generate_token(netflix_id)
                     
+                    # 🎯 التنسيق المطلوب والمضبوط بدقة تامة
+                    final_token = token_result.get('token') if token_result.get('status') == 'Success' else netflix_id
+                    login_url = f"https://netflix.com/unsupported?nftoken={final_token}"
+                    
                     res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
-                    res_msg += f"🌍 البلد: `{account_info['country']}`\n"
-                    res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
-                    res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
-                    res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
-                    res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
-                    res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
+                    res_msg += f"🌍 البلد: {account_info['country']}\n"
+                    res_msg += f"📦 الباقة: {account_info['plan']}\n"
+                    res_msg += f"💰 السعر: {account_info['plan_price']}\n"
+                    res_msg += f"📅 التجديد: {account_info['next_billing']}\n"
+                    res_msg += f"👥 الملفات: {account_info['profiles']}\n"
+                    res_msg += f"📧 البريد: {account_info['email'].replace(chr(92) + 'x40', '@')}\n\n"
+                    res_msg += f"📱 رابط الدخول المباشر:\n{login_url}"
                     
                     markup = InlineKeyboardMarkup()
-                    if token_result.get('status') == 'Success':
-                        mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
-                        res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`\n"
-                        markup.add(
-                            InlineKeyboardButton("💻 PC Login", url=mobile_url),
-                            InlineKeyboardButton("📱 Phone Login", url=mobile_url)
-                        )
-                    else:
-                        fallback_url = f"https://netflix.com/unsupported?nftoken={netflix_id}"
-                        res_msg += f"\n📱 رابط الدخول المباشر:\n`{fallback_url}`\n"
-                        markup.add(
-                            InlineKeyboardButton("💻 PC Login", url=fallback_url),
-                            InlineKeyboardButton("📱 Phone Login", url=fallback_url)
-                        )
-                        
-                    res_msg += f"\n👑 *Dev:* @{DEVELOPER_USERNAME} | [Channel]({CHANNEL_LINK})"
+                    markup.add(
+                        InlineKeyboardButton("💻 PC Login", url=login_url),
+                        InlineKeyboardButton("📱 Phone Login", url=login_url)
+                    )
                     
                     bot.send_message(message.chat.id, res_msg, reply_markup=markup, disable_web_page_preview=True)
                     
-                    res_file.write(res_msg.replace('`', '').replace('*', '') + "\n" + "="*40 + "\n")
-                    save_to_stock(res_msg.replace('`', '').replace('*', ''))
+                    res_file.write(res_msg + "\n" + "="*40 + "\n")
+                    save_to_stock(res_msg)
                     time.sleep(0.1)
                     
         try:
@@ -676,5 +658,5 @@ def handle_documents(message):
                 pass
 
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running with disabled web page previews for clean buttons...")
+    logger.info("Telegram Bot is running with exact custom Netflix result format...")
     bot.infinity_polling(skip_pending=True)
