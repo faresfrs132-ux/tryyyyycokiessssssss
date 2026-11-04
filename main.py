@@ -27,7 +27,7 @@ CHANNEL_LINK = "https://t.me/faresschannel"
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# 👑 إعدادات المطور الخاصة بك (فارس) - نقاط بلا حدود
+# 👑 إعدادات المطور الخاصة بك (fares) - نقاط بلا حدود
 DEVELOPER_ID = 8713916851
 
 STOCK_FILE = "stock_accounts.txt"
@@ -400,7 +400,7 @@ def send_welcome(message):
     if user_id == DEVELOPER_ID:
         markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
         
-    welcome_text = "🎬 **مرحباً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [فارس](https://t.me/farxxess)\n\nاختر أحد الخيارات أدناه للبدء:"
+    welcome_text = "🎬 **مرحباً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [fares](https://t.me/farxxes)\n\nاختر أحد الخيارات أدناه للبدء:"
     bot.send_message(message.chat.id, welcome_text, parse_mode='Markdown', reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -441,7 +441,7 @@ def callback_query(call):
                     InlineKeyboardButton("📱 Phone Login", url=direct_url)
                 )
             
-            watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxess | [Channel](https://t.me/farxxess)"
+            watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxes | [Channel](https://t.me/faresschannel)"
             remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
             bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", parse_mode='Markdown', reply_markup=markup if token_match else None)
         else:
