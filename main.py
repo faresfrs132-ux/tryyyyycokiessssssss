@@ -230,7 +230,8 @@ def check_netflix_cookie(cookie_dict):
         profiles_str = ", ".join(profiles) if profiles else "Unknown"
 
         status_match = re.search(r'"membershipStatus":\s*"([^"]+)"', txt)
-        is_premium = bool(status_match and status_match.group(1) == 'CURRENT_MEMBER')
+        membership_status = status_match.group(1) if status_match else "Unknown"
+        is_premium = bool(membership_status == 'CURRENT_MEMBER')
         is_valid = bool(status_match)
         
         if not is_valid and "NetflixId" in cookie_dict:
@@ -244,6 +245,7 @@ def check_netflix_cookie(cookie_dict):
             'plan': plan,
             'plan_price': plan_price,
             'member_since': member_since,
+            'membership_status': membership_status,
             'payment_method': payment_method,
             'phone': phone,
             'email': email,
@@ -298,6 +300,26 @@ def process_single_line(line):
     except Exception as e:
         logger.error(f"Error in process_single_line: {e}")
     return None
+
+# ==================== دالة تجميع تفاصيل الحساب بتنسيق موحد ====================
+def format_account_message(acc):
+    res_msg = "🎬 **حساب NETFLIX صالح وفعال** 🎬\n\n"
+    res_msg += f"🌍 البلد: `{acc['country']}`\n"
+    res_msg += f"📦 الباقة: `{acc['plan']}`\n"
+    res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
+    res_msg += f"📅 Next Billing: `{acc['next_billing']}`\n"
+    res_msg += f"👤 Member Since: `{acc['member_since']}`\n"
+    res_msg += f"⚡ Membership Status: `{acc['membership_status']}`\n"
+    res_msg += f"👥 Profiles: `{acc['profiles']}`\n"
+    res_msg += f"📧 البريد: `{acc['email']}`\n"
+    
+    token_result = acc.get('token_result', {})
+    if token_result.get('status') == 'Success':
+        web_url = token_result.get('direct_login_url')
+        res_msg += f"\n📱 **رابط الدخول المباشر:**\n`{web_url}`"
+        
+    res_msg += f"\n\n--- \n*{CHANNEL_SIGNATURE}*"
+    return res_msg
 
 # ==================== واجهة البوت والأوامر ====================
 def send_sub_required_message(message):
@@ -373,20 +395,7 @@ def pull_account(message):
     db["accounts"] = accounts
     save_db(db)
 
-    res_msg = "🎬 **حساب NETFLIX مسحوب من الذاكرة بنجاح** 🎬\n\n"
-    res_msg += f"🌍 البلد: `{acc['country']}`\n"
-    res_msg += f"📦 الباقة: `{acc['plan']}`\n"
-    res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
-    res_msg += f"📅 التجديد: `{acc['next_billing']}`\n"
-    res_msg += f"👥 الملفات: `{acc['profiles']}`\n"
-    res_msg += f"📧 البريد: `{acc['email']}`\n"
-    
-    token_result = acc.get('token_result', {})
-    if token_result.get('status') == 'Success':
-        web_url = token_result.get('direct_login_url')
-        res_msg += f"\n📱 **رابط الدخول المباشر:**\n`{web_url}`\n"
-    
-    res_msg += f"\n--- \n*{CHANNEL_SIGNATURE}*"
+    res_msg = format_account_message(acc)
     bot.reply_to(message, res_msg, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
@@ -451,20 +460,7 @@ def handle_documents(message):
                     acc = future.result()
                     if acc:
                         valid_count += 1
-                        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
-                        res_msg += f"🌍 البلد: `{acc['country']}`\n"
-                        res_msg += f"📦 الباقة: `{acc['plan']}`\n"
-                        res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
-                        res_msg += f"📅 التجديد: `{acc['next_billing']}`\n"
-                        res_msg += f"👥 الملفات: `{acc['profiles']}`\n"
-                        res_msg += f"📧 البريد: `{acc['email']}`\n"
-                        
-                        token_result = acc.get('token_result', {})
-                        if token_result.get('status') == 'Success':
-                            web_url = token_result.get('direct_login_url')
-                            res_msg += f"\n📱 رابط الدخول المباشر:\n`{web_url}`"
-                            
-                        res_msg += f"\n\n--- \n*{CHANNEL_SIGNATURE}*"
+                        res_msg = format_account_message(acc)
                         bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
                         valid_accounts_text += f"Email: {acc['email']} | Plan: {acc['plan']} | Expiry: {acc['next_billing']}\n"
                 except Exception as ex:
@@ -518,19 +514,7 @@ def handle_text_message(message):
         
         add_account_to_db(account_info)
         
-        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
-        res_msg += f"🌍 البلد: `{account_info['country']}`\n"
-        res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
-        res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
-        res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
-        res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
-        res_msg += f"📧 البريد: `{account_info['email']}`\n"
-        
-        if token_result.get('status') == 'Success':
-            web_url = token_result.get('direct_login_url')
-            res_msg += f"\n📱 رابط الدخول المباشر:\n`{web_url}`"
-            
-        res_msg += f"\n\n--- \n*{CHANNEL_SIGNATURE}*"
+        res_msg = format_account_message(account_info)
         bot.edit_message_text(res_msg, message.chat.id, msg_wait.message_id, parse_mode='Markdown')
     else:
         bot.edit_message_text(f"❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).\n\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
