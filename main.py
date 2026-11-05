@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # العلامة المائية وحقوق الملكية
 CHANNEL_SIGNATURE = "📢 Channel: @faresschannel"
-DEV_SIGNATURE = "dev farxxes"
+DEV_SIGNATURE = "dev @farxxes"
 
 # إعدادات البوت والاشتراك الإجباري
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAFhansb7r8ivR2DyC1T5_5o4cbNxT6J5-c')
@@ -385,7 +385,7 @@ def format_account_message(acc):
         web_url = token_result.get('direct_login_url')
         res_msg += f"\n📱 **رابط الدخول المباشر:**\n`{web_url}`"
         
-    res_msg += f"\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
+    res_msg += f"\n\n {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
     return res_msg
 
 # ==================== واجهة البوت والأوامر ====================
