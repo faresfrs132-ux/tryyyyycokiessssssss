@@ -34,7 +34,7 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN', '8723824234:AAGWrRZRbMG3B8KbQwyELl_gGguk
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # ضع آيدي الأدمن الخاص بك هنا
-ADMIN_IDS = [123456789] # <--- قم بتغيير الرقم إلى آيدي حسابك الخاص
+ADMIN_IDS = [123456789] # <--- قم بتغيير الرقم إلى آيدي حسابك الحقيقي
 
 # إعدادات الاشتراك الإجباري لقناتك
 REQUIRED_CHANNEL = os.environ.get('REQUIRED_CHANNEL', '@faresschannel')
@@ -746,7 +746,11 @@ def handle_documents(message):
                         
                         token_result = acc.get('token_result', {})
                         token_val = token_result.get('token', 'N/A')
-                        mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_val}") if token_result.get('status'] == 'Success' else 'Failed to generate'
+                        
+                        if token_result.get('status') == 'Success':
+                            mobile_url = token_result.get('direct_login_url', f"https://netflix.com/unsupported?nftoken={token_val}")
+                        else:
+                            mobile_url = 'Failed to generate'
 
                         if lang == 'en':
                             res_msg = "🎬 **Active NETFLIX Account** 🎬\n\n"
@@ -757,7 +761,7 @@ def handle_documents(message):
                             res_msg += f"🔄 Next Billing: `{expiry}`\n"
                             res_msg += f"👥 Profiles: `{profiles}`\n"
                             res_msg += f"📧 Email: `{email}`\n"
-                            if token_result.get('status'] == 'Success':
+                            if token_result.get('status') == 'Success':
                                 res_msg += f"\n📱 **Direct Login URL (Fresh):**\n`{mobile_url}`"
                             res_msg += f"\n\n👨‍💻 **Developer:** `{OWNER_CREDIT}`"
                         else:
@@ -769,7 +773,7 @@ def handle_documents(message):
                             res_msg += f"🔄 تاريخ التجديد: `{expiry}`\n"
                             res_msg += f"👥 البروفايلات: `{profiles}`\n"
                             res_msg += f"📧 البريد: `{email}`\n"
-                            if token_result.get('status'] == 'Success':
+                            if token_result.get('status') == 'Success':
                                 res_msg += f"\n📱 **رابط الدخول المباشر (طازج):**\n`{mobile_url}`"
                             res_msg += f"\n\n👨‍💻 **المطور:** `{OWNER_CREDIT}`"
                             
