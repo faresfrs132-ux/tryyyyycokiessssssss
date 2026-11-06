@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 OWNER_CREDIT = "Huy Vũ - https://huyvu2512.io.vn"
 
 # إعدادات بوت التليجرام
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8795234711:AAFhansb7r8ivR2DyC1T5_5o4cbNxT6J5-c')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8723824234:AAGWrRZRbMG3B8KbQwyELl_gGgukn4_zBTs')
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # ضع آيدي الأدمن الخاص بك هنا لكي تظهر له الإحصائيات فقط (يمكنك استبدال الرقم برقمك الحقيقي في تيليجرام)
